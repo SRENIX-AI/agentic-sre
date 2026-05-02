@@ -18,8 +18,10 @@ import (
 // snapshot.Source that errored returns err; an empty list is an empty list.
 type Nodes struct{}
 
+// Name returns the component label for the report.
 func (Nodes) Name() string { return "Cluster Nodes" }
 
+// Run executes the node-readiness probe.
 func (Nodes) Run(ctx context.Context, src snapshot.Source) Result {
 	r := Result{Component: ComponentResult{Component: "Cluster Nodes"}}
 	list, err := src.List(ctx, snapshot.GVRNode, "")

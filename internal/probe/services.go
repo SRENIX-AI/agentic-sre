@@ -17,7 +17,7 @@ import (
 // but is now data-driven (no longer hardcoded into a probe).
 type ServiceTarget struct {
 	Namespace string `yaml:"namespace" json:"namespace"`
-	Selector  string `yaml:"selector"  json:"selector"`     // "app=redis-cluster" — single label match for now
+	Selector  string `yaml:"selector"  json:"selector"` // "app=redis-cluster" — single label match for now
 	Display   string `yaml:"display"   json:"display"`
 }
 
@@ -31,8 +31,10 @@ type Services struct {
 	Targets []ServiceTarget
 }
 
+// Name returns the component label for the report.
 func (Services) Name() string { return "Critical Services" }
 
+// Run executes the per-target service-readiness probe.
 func (s Services) Run(ctx context.Context, src snapshot.Source) Result {
 	r := Result{Component: ComponentResult{Component: "Critical Services"}}
 

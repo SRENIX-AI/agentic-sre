@@ -16,6 +16,7 @@ import (
 // Severity describes a finding level.
 type Severity string
 
+// Severity values used on Findings.
 const (
 	SeverityInfo     Severity = "info"
 	SeverityWarning  Severity = "warning"
@@ -24,7 +25,7 @@ const (
 
 // Finding is a single observation surfaced by a probe.
 type Finding struct {
-	Component   string   `json:"component"`             // "Ceph", "PostgreSQL", "Service: LiveKit SIP", ...
+	Component   string   `json:"component"` // "Ceph", "PostgreSQL", "Service: LiveKit SIP", ...
 	Severity    Severity `json:"severity"`
 	Message     string   `json:"message"`
 	Remediation string   `json:"remediation,omitempty"` // Optional kubectl-ready hint

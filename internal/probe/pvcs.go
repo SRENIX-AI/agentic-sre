@@ -13,8 +13,10 @@ import (
 // PVCs ports probe_pvcs from cluster-health-report.sh:276-293.
 type PVCs struct{}
 
+// Name returns the component label for the report.
 func (PVCs) Name() string { return "Storage Claims" }
 
+// Run executes the PVC-binding probe.
 func (PVCs) Run(ctx context.Context, src snapshot.Source) Result {
 	r := Result{Component: ComponentResult{Component: "Storage Claims"}}
 	list, err := src.List(ctx, snapshot.GVRPVC, "")

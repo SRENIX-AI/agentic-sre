@@ -1,0 +1,19 @@
+# Cluster Health Autopilot — Code Owners
+#
+# Each line is a file pattern followed by one or more owners.
+# Owners are auto-requested as reviewers on PRs touching matching files.
+# See https://docs.github.com/articles/about-code-owners for syntax.
+
+# Default: all changes routed to @salilkadam.
+# Tighten per-area when more contributors join.
+*                          @salilkadam
+
+# Future per-area examples (uncomment + edit when adding teammates):
+# /cmd/cha/                 @salilkadam @<engineer>
+# /internal/snapshot/       @salilkadam
+# /internal/probe/          @salilkadam
+# /internal/diagnose/       @salilkadam
+# /internal/fix/            @salilkadam
+# /charts/                  @salilkadam
+# /.github/                 @salilkadam
+# /SECURITY.md              @salilkadam

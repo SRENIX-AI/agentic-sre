@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -78,6 +78,7 @@ func (l *Live) List(ctx context.Context, gvr schema.GroupVersionResource, ns str
 	return list, nil
 }
 
+// Get returns a single object by namespace + name from the live cluster.
 func (l *Live) Get(ctx context.Context, gvr schema.GroupVersionResource, ns, name string) (*unstructured.Unstructured, error) {
 	var ri dynamic.ResourceInterface
 	if ns == "" {
@@ -88,6 +89,7 @@ func (l *Live) Get(ctx context.Context, gvr schema.GroupVersionResource, ns, nam
 	return ri.Get(ctx, name, v1.GetOptions{})
 }
 
+// Mode reports live mode — fixers are permitted.
 func (l *Live) Mode() Mode { return ModeLive }
 
 // isResourceNotFound returns true for the API-server "no resource type" error

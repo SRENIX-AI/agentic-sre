@@ -17,8 +17,8 @@ package snapshot
 import (
 	"context"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Source returns Kubernetes objects to a probe.
@@ -43,8 +43,10 @@ type Source interface {
 	Mode() Mode
 }
 
+// Mode reports whether a Source is backed by a live cluster or a snapshot.
 type Mode int
 
+// Mode values.
 const (
 	ModeLive Mode = iota
 	ModeSnapshot

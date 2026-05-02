@@ -64,14 +64,14 @@ func (f *File) loadJSONFile(p string) error {
 	if err != nil {
 		return fmt.Errorf("open %q: %w", p, err)
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }()
 	data, err := io.ReadAll(fh)
 	if err != nil {
 		return fmt.Errorf("read %q: %w", p, err)
 	}
 	// Determine if this is a List or a single object by peeking at "kind".
 	var probe struct {
-		Kind  string `json:"kind"`
+		Kind  string            `json:"kind"`
 		Items []json.RawMessage `json:"items"`
 	}
 	if err := json.Unmarshal(data, &probe); err != nil {
@@ -124,16 +124,16 @@ func gvrFromObject(obj unstructured.Unstructured) string {
 }
 
 var kindToResource = map[string]string{
-	"Pod":                    "pods",
-	"Node":                   "nodes",
-	"PersistentVolumeClaim":  "persistentvolumeclaims",
-	"Event":                  "events",
-	"Deployment":             "deployments",
-	"ReplicaSet":             "replicasets",
-	"Job":                    "jobs",
-	"CronJob":                "cronjobs",
-	"ExternalSecret":         "externalsecrets",
-	"Cluster":                "clusters",
+	"Pod":                   "pods",
+	"Node":                  "nodes",
+	"PersistentVolumeClaim": "persistentvolumeclaims",
+	"Event":                 "events",
+	"Deployment":            "deployments",
+	"ReplicaSet":            "replicasets",
+	"Job":                   "jobs",
+	"CronJob":               "cronjobs",
+	"ExternalSecret":        "externalsecrets",
+	"Cluster":               "clusters",
 }
 
 func indexKey(gvr schema.GroupVersionResource) string {
@@ -150,7 +150,7 @@ func (f *File) List(_ context.Context, gvr schema.GroupVersionResource, ns strin
 	key := indexKey(gvr)
 	out := &unstructured.UnstructuredList{}
 	out.SetAPIVersion(gvr.GroupVersion().String())
-	out.SetKind(strings.Title(gvr.Resource[:len(gvr.Resource)-1]) + "List")
+	out.SetKind(titleCase(trimTrailingS(gvr.Resource)) + "List")
 	for _, obj := range f.objects[key] {
 		if ns != "" && obj.GetNamespace() != ns {
 			continue
@@ -175,3 +175,26 @@ func (f *File) Get(_ context.Context, gvr schema.GroupVersionResource, ns, name 
 
 // Mode reports snapshot mode — fixers refuse to run.
 func (f *File) Mode() Mode { return ModeSnapshot }
+
+// titleCase upper-cases the first ASCII letter of s. We only feed it
+// resource names ("pods", "events", "externalsecrets" …) which are all
+// lowercase ASCII, so this is sufficient and avoids the unicode
+// edge-case bugs that got strings.Title deprecated.
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	if c := s[0]; c >= 'a' && c <= 'z' {
+		return string(c-'a'+'A') + s[1:]
+	}
+	return s
+}
+
+// trimTrailingS drops a trailing 's' if present. Used to convert plural
+// resource names ("pods" → "Pod") into Kind values.
+func trimTrailingS(s string) string {
+	if len(s) > 0 && s[len(s)-1] == 's' {
+		return s[:len(s)-1]
+	}
+	return s
+}

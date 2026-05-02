@@ -1,0 +1,48 @@
+# golangci-lint configuration — Cluster Health Autopilot
+# https://golangci-lint.run/usage/configuration/
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck       # unchecked errors
+    - govet          # standard go vet (shadow disabled by default; we keep stock)
+    - ineffassign    # unused assignments
+    - staticcheck    # bug-class linter
+    - unused         # unused vars/funcs/types
+    - misspell       # English spelling
+    - unconvert      # redundant conversions
+    - revive         # replacement for golint (style)
+    - bodyclose      # http.Response.Body must be closed
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: indent-error-flow
+        - name: error-return
+        - name: error-naming
+        - name: receiver-naming
+
+  exclusions:
+    rules:
+      # Allow some leeway in test files.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - revive
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

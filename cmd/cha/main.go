@@ -4,14 +4,16 @@
 // cha — Cluster Health Autopilot CLI
 //
 // Subcommands (v0.1.x):
-//   cha diagnose --snapshot <path>   # zero-trust offline mode (no cluster access)
-//   cha diagnose --live              # live cluster mode (uses kubeconfig or in-cluster SA)
-//   cha version                      # version info
+//
+//	cha diagnose --snapshot <path>   # zero-trust offline mode (no cluster access)
+//	cha diagnose --live              # live cluster mode (uses kubeconfig or in-cluster SA)
+//	cha version                      # version info
 //
 // Future:
-//   cha snapshot capture             # wraps `kubectl get` to produce a snapshot bundle
-//   cha report --format slack|json   # post a structured report somewhere
-//   cha remediate --live             # gated; runs the whitelisted fixers
+//
+//	cha snapshot capture             # wraps `kubectl get` to produce a snapshot bundle
+//	cha report --format slack|json   # post a structured report somewhere
+//	cha remediate --live             # gated; runs the whitelisted fixers
 package main
 
 import (
@@ -66,10 +68,10 @@ func versionCmd() *cobra.Command {
 
 func diagnoseCmd() *cobra.Command {
 	var (
-		snapshotPath   string
-		live           bool
-		kubeconfig     string
-		outputFormat   string
+		snapshotPath string
+		live         bool
+		kubeconfig   string
+		outputFormat string
 	)
 	c := &cobra.Command{
 		Use:   "diagnose",
