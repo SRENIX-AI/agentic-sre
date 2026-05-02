@@ -1,4 +1,4 @@
-module github.com/salilkadam/cluster-health-autopilot
+module github.com/Bionic-AI-Solutions/cluster-health-autopilot
 
 go 1.26.0
 

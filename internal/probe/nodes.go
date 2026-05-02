@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/salilkadam/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 )
 
 // Nodes ports probe_nodes from cluster-health-report.sh:249-274.

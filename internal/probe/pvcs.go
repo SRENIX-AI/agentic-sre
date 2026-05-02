@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/salilkadam/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 )
 
 // PVCs ports probe_pvcs from cluster-health-report.sh:276-293.

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/salilkadam/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 )
 
 // ServiceTarget describes a Deployment-shaped workload to probe.

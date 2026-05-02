@@ -10,7 +10,7 @@ package probe
 import (
 	"context"
 
-	"github.com/salilkadam/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 )
 
 // Severity describes a finding level.

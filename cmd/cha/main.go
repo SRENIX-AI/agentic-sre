@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/salilkadam/cluster-health-autopilot/internal/probe"
-	"github.com/salilkadam/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/spf13/cobra"
 )
 
