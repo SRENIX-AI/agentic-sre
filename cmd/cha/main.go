@@ -48,12 +48,106 @@ This release is diagnose-only.`,
 	}
 
 	root.AddCommand(diagnoseCmd())
+	root.AddCommand(snapshotCmd())
 	root.AddCommand(versionCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+func snapshotCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "snapshot",
+		Short: "Capture a cluster snapshot for offline diagnose",
+	}
+	c.AddCommand(snapshotCaptureCmd())
+	return c
+}
+
+func snapshotCaptureCmd() *cobra.Command {
+	var (
+		outDir     string
+		outTar     string
+		kubeconfig string
+		quiet      bool
+	)
+	c := &cobra.Command{
+		Use:   "capture",
+		Short: "Capture cluster state into a directory or tarball for `cha diagnose --snapshot`",
+		Long: `Captures the canonical resource set required by cha diagnose offline:
+pods, events, deployments, replicasets, jobs, cronjobs, nodes, pvcs,
+externalsecrets, clusters.postgresql.cnpg.io, cephclusters.ceph.rook.io.
+
+Reads only — never modifies cluster state. Output matches kubectl get -o json
+shape so the same files round-trip back through cha diagnose --snapshot.`,
+		Example: `  # Capture into a directory
+  cha snapshot capture --out ./snapshot
+
+  # Capture into a tarball (single artifact, easy to share)
+  cha snapshot capture --tar snapshot.tgz
+
+  # Then diagnose offline
+  cha diagnose --snapshot ./snapshot`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if (outDir == "" && outTar == "") || (outDir != "" && outTar != "") {
+				return fmt.Errorf("specify exactly one of --out or --tar")
+			}
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			src, err := snapshot.LoadLive(kubeconfig)
+			if err != nil {
+				return err
+			}
+			var summary *snapshot.CaptureSummary
+			if outTar != "" {
+				summary, err = snapshot.CaptureTarGZ(ctx, src, outTar)
+			} else {
+				summary, err = snapshot.Capture(ctx, src, outDir)
+			}
+			if err != nil {
+				return err
+			}
+			if !quiet {
+				printCaptureSummary(summary, outTar != "")
+			}
+			return nil
+		},
+	}
+	c.Flags().StringVar(&outDir, "out", "", "Output directory (mutually exclusive with --tar)")
+	c.Flags().StringVar(&outTar, "tar", "", "Output tarball path (mutually exclusive with --out)")
+	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
+	c.Flags().BoolVar(&quiet, "quiet", false, "Suppress per-resource summary output")
+	return c
+}
+
+func printCaptureSummary(s *snapshot.CaptureSummary, isTar bool) {
+	if isTar {
+		fmt.Printf("Wrote tarball: %s\n", s.OutDir)
+	} else {
+		fmt.Printf("Wrote snapshot to: %s\n", s.OutDir)
+	}
+	fmt.Println(repeatRune('-', 60))
+	totalItems := 0
+	skipped := 0
+	for _, item := range s.Items {
+		if item.SkipErr != "" {
+			fmt.Printf("  ⚠️  %-60s skipped: %s\n", item.GVR, item.SkipErr)
+			skipped++
+			continue
+		}
+		fmt.Printf("  ✅  %-60s %4d item(s)\n", item.GVR, item.Items)
+		totalItems += item.Items
+	}
+	fmt.Println(repeatRune('-', 60))
+	fmt.Printf("Total: %d resources, %d items captured", len(s.Items)-skipped, totalItems)
+	if skipped > 0 {
+		fmt.Printf(" (%d skipped)", skipped)
+	}
+	fmt.Println()
 }
 
 func versionCmd() *cobra.Command {
