@@ -460,7 +460,7 @@ The secret at `secret/t6-apps/cha/config` was created with:
 
 ```sh
 vault kv put secret/t6-apps/cha/config \
-  minio_endpoint="http://minio-tenant-hl.minio.svc.cluster.local:9000" \
+  minio_endpoint="https://s3.baisoln.com" \
   minio_access_key="<CHA_SERVICE_ACCOUNT_KEY>" \
   minio_secret_key="<CHA_SERVICE_ACCOUNT_SECRET>" \
   minio_bucket="cha-runs"
