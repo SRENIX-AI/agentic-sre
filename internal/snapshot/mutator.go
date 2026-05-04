@@ -7,6 +7,7 @@ import (
 	"context"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
@@ -29,6 +30,12 @@ type Mutator interface {
 	// Patch applies a strategic-merge or JSON-merge patch to a single resource.
 	// patchType is one of types.{StrategicMergePatchType, MergePatchType, JSONPatchType}.
 	Patch(ctx context.Context, gvr schema.GroupVersionResource, ns, name string, patchType types.PatchType, patch []byte) error
+
+	// Create writes a new resource. Used by the DriftReport writer to upsert
+	// drift CRs each cron tick. Like Delete/Patch, this is intentionally
+	// scoped — fixers are not permitted to create resources, only the
+	// report writer.
+	Create(ctx context.Context, gvr schema.GroupVersionResource, ns string, obj *unstructured.Unstructured) error
 }
 
 // AsMutator returns the source as a Mutator if it supports live mutation,
@@ -58,5 +65,17 @@ func (l *Live) Patch(ctx context.Context, gvr schema.GroupVersionResource, ns, n
 		ri = l.client.Resource(gvr).Namespace(ns)
 	}
 	_, err := ri.Patch(ctx, name, patchType, patch, v1.PatchOptions{})
+	return err
+}
+
+// Create writes a new resource on the live cluster.
+func (l *Live) Create(ctx context.Context, gvr schema.GroupVersionResource, ns string, obj *unstructured.Unstructured) error {
+	var ri dynamic.ResourceInterface
+	if ns == "" {
+		ri = l.client.Resource(gvr)
+	} else {
+		ri = l.client.Resource(gvr).Namespace(ns)
+	}
+	_, err := ri.Create(ctx, obj, v1.CreateOptions{})
 	return err
 }

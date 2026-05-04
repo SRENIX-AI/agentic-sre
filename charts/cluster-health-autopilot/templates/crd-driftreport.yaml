@@ -1,0 +1,137 @@
+{{- if .Values.driftReport.enabled }}
+# DriftReport CRD — kubectl-queryable diagnostic objects.
+#
+# Each cron tick upserts one DriftReport per active diagnostic
+# (probes findings, analyzer diagnostics, fixer skip-reasons). The CR
+# accumulates `firstObserved` / `lastObserved` so an SRE can:
+#
+#   kubectl get driftreports -A
+#   kubectl describe driftreport -n <ns> <subject-hash>
+#
+# CRs whose subject no longer appears in the latest run are deleted
+# (see internal/report/driftreport.go for the reconcile semantics).
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: driftreports.cha.bionicaisolutions.com
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  group: cha.bionicaisolutions.com
+  scope: Cluster
+  names:
+    kind: DriftReport
+    plural: driftreports
+    singular: driftreport
+    shortNames:
+      - drift
+      - drifts
+    categories:
+      - cha
+      - cluster-health
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["subject", "severity", "source", "message"]
+              properties:
+                subject:
+                  type: string
+                  description: |
+                    Stable identity for de-duplication across cron ticks.
+                    Examples: "Secret/mcp/openproject-secrets/openproject-url",
+                    "ExternalSecret/mail/mail-service-api-key",
+                    "Service:LiveKit-SIP".
+                  maxLength: 253
+                severity:
+                  type: string
+                  enum: ["info", "warning", "critical"]
+                source:
+                  type: string
+                  description: |
+                    Producer of the report. One of: probe, analyzer-name,
+                    fixer-name. e.g. "Postgres", "SecretKeyMissing",
+                    "ProactiveSecretKeyCheck", "StaleErrorPods".
+                  maxLength: 64
+                message:
+                  type: string
+                  description: |
+                    Human-readable description, identical to what would
+                    have appeared in Slack. Includes the suggested
+                    remediation.
+                  maxLength: 4096
+                remediation:
+                  type: string
+                  description: |
+                    Optional kubectl-ready hint (a one-liner the operator
+                    can paste). Probes set this; analyzers usually embed
+                    the hint into `message` instead.
+                  maxLength: 1024
+                category:
+                  type: string
+                  description: |
+                    Logical bucket: "probe", "analyzer", "fixer-action",
+                    "fixer-skipped". Useful for kubectl filtering.
+                  enum: ["probe", "analyzer", "fixer-action", "fixer-skipped"]
+                resourceRef:
+                  type: object
+                  description: |
+                    The Kubernetes resource the report is about, when
+                    identifiable. Allows `kubectl get drifts -l ...`.
+                  properties:
+                    apiVersion:
+                      type: string
+                      maxLength: 64
+                    kind:
+                      type: string
+                      maxLength: 64
+                    namespace:
+                      type: string
+                      maxLength: 253
+                    name:
+                      type: string
+                      maxLength: 253
+            status:
+              type: object
+              properties:
+                firstObserved:
+                  type: string
+                  format: date-time
+                lastObserved:
+                  type: string
+                  format: date-time
+                observationCount:
+                  type: integer
+                  minimum: 1
+                runID:
+                  type: string
+                  description: ID of the most recent cha run that observed this drift.
+                  maxLength: 64
+      additionalPrinterColumns:
+        - name: Severity
+          type: string
+          jsonPath: .spec.severity
+        - name: Source
+          type: string
+          jsonPath: .spec.source
+        - name: Subject
+          type: string
+          jsonPath: .spec.subject
+        - name: Last Seen
+          type: date
+          jsonPath: .status.lastObserved
+        - name: Count
+          type: integer
+          jsonPath: .status.observationCount
+      subresources:
+        status: {}
+{{- end }}

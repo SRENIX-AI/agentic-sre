@@ -38,6 +38,12 @@ rules:
   - apiGroups: ["ceph.rook.io"]
     resources: ["cephclusters"]
     verbs: ["get", "list"]
+{{- if .Values.driftReport.enabled }}
+  # DriftReport CRD — read existing CRs to compute the upsert diff each tick.
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["driftreports"]
+    verbs: ["get", "list"]
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

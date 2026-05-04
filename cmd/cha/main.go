@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
@@ -298,11 +299,12 @@ func versionCmd() *cobra.Command {
 
 func diagnoseCmd() *cobra.Command {
 	var (
-		snapshotPath string
-		live         bool
-		kubeconfig   string
-		outputFormat string
-		slackWebhook string
+		snapshotPath      string
+		live              bool
+		kubeconfig        string
+		outputFormat      string
+		slackWebhook      string
+		writeDriftReports bool
 	)
 	c := &cobra.Command{
 		Use:   "diagnose",
@@ -360,6 +362,21 @@ func diagnoseCmd() *cobra.Command {
 				}
 			}
 
+			// DriftReport reconcile — only when running live + the CRD-write
+			// is opted in. Snapshot mode skips silently since fixers' Mutator
+			// requirement is the same gate.
+			if writeDriftReports && live {
+				if mut := snapshot.AsMutator(src); mut != nil {
+					entries := report.AssembleEntries(results, diagnostics, nil)
+					runID := time.Now().UTC().Format("20060102-150405")
+					c, u, d, err := report.Reconcile(cmd.Context(), src, mut, entries, runID)
+					if err != nil {
+						fmt.Fprintln(os.Stderr, "warning: driftreport reconcile partial failure:", err)
+					}
+					fmt.Fprintf(os.Stderr, "driftreports: %d created, %d updated, %d deleted\n", c, u, d)
+				}
+			}
+
 			switch outputFormat {
 			case "json":
 				return printJSON(results, diagnostics)
@@ -375,6 +392,7 @@ func diagnoseCmd() *cobra.Command {
 	c.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
 	c.Flags().StringVar(&outputFormat, "format", "text", "Output format: text|json")
 	c.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Optional Slack incoming-webhook URL — posts a formatted summary of the run (works with both --snapshot and --live)")
+	c.Flags().BoolVar(&writeDriftReports, "write-driftreports", true, "Upsert DriftReport CRs into the cluster (live mode only; ignored on --snapshot)")
 	return c
 }
 

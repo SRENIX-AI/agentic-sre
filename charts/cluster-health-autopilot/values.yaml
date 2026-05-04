@@ -37,6 +37,14 @@ slack:
   webhookSecretName: ""           # e.g. "cha-slack-webhook"
   webhookSecretKey: "WEBHOOK_URL" # key inside the Secret holding the webhook URL
 
+# DriftReport CRD — kubectl-queryable diagnostic objects.
+# Each cron tick upserts one DriftReport per active diagnostic; CRs whose
+# subject is no longer reported get deleted automatically. Inspect with:
+#   kubectl get driftreports -A
+# Disable if you don't want CRD-shaped output (Slack + JSON still work).
+driftReport:
+  enabled: true
+
 # RBAC. Keep enabled — the CronJob will fail without these.
 rbac:
   create: true
