@@ -1,39 +1,119 @@
-# publish-runs.yml — WS-C nightly pipeline
+# publish-runs.yml — WS-C nightly run-log pipeline
 #
-# Pulls the day's cha diagnose --format json output from the private MinIO
-# bucket, anonymizes it with `cha anonymize`, appends to runs/YYYY-MM-DD.jsonl,
-# regenerates runs/SUMMARY.md with `cha summarize`, then commits and pushes.
+# Two operating modes — choose ONE by toggling the `if:` on each job:
 #
-# Required GitHub Actions secrets (set in repo Settings → Secrets):
-#   MINIO_ENDPOINT    e.g. https://minio.internal:9000
-#   MINIO_ACCESS_KEY  MinIO / S3 access key ID
-#   MINIO_SECRET_KEY  MinIO / S3 secret access key
-#   MINIO_BUCKET      bucket name, e.g. cha-runs
+# MODE A — Self-hosted runner (RECOMMENDED, no MinIO needed)
+#   The runner lives inside the cluster. The workflow runs `cha diagnose --live`
+#   directly and pipes output through `cha anonymize`. No intermediate object
+#   storage required. Set runs-on to [self-hosted, cluster] (or your runner label).
+#   → Set publish-self-hosted.if: true  AND  publish-minio.if: false
 #
-# The CronJob in-cluster must write each run as:
-#   <bucket>/runs/YYYY-MM-DD/run-HHMMSS.json
-# using:
-#   cha diagnose --live --format json > /tmp/run.json
-#   mc cp /tmp/run.json minio/$MINIO_BUCKET/runs/$(date +%Y-%m-%d)/run-$(date +%H%M%S).json
+# MODE B — GitHub-hosted runner + MinIO
+#   Credentials are read from Vault at runtime via hashicorp/vault-action.
+#   Requires ONE GitHub Actions secret: VAULT_TOKEN
+#   All MinIO/bucket config lives in Vault at secret/t6-apps/cha/config.
+#   IMPORTANT: MinIO must be reachable from the internet (not cluster-internal).
+#   If the endpoint is private/unreachable, the job emits a warning and skips
+#   cleanly — it does NOT fail the workflow.
+#   → Set publish-minio.if: true  AND  publish-self-hosted.if: false
+#
+# Vault secret (already created at secret/t6-apps/cha/config):
+#   minio_endpoint   = "https://s3.baisoln.com"   ← must be internet-reachable
+#   minio_access_key = "<scoped service account>"
+#   minio_secret_key = "<scoped service account>"
+#   minio_bucket     = "cha-runs"
+#
+# GitHub Actions secrets required:
+#   VAULT_TOKEN  — token with policy cha-publish-runs (read on above path)
+#                  (Only needed for Mode B; Mode A uses the in-cluster runner SA)
+#
+# Vault address is baked in (vault.baisoln.com is publicly reachable).
 
 name: publish-runs
 
 on:
   schedule:
-    # 02:00 UTC daily — after the in-cluster CronJob has written today's run.
+    # 02:00 UTC daily — after the in-cluster CronJob has run.
     - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
       date:
-        description: "Date to pull (YYYY-MM-DD). Defaults to yesterday."
+        description: "Date to publish (YYYY-MM-DD). Defaults to yesterday."
         required: false
+      mode:
+        description: "Override mode: self-hosted or minio"
+        required: false
+        default: ""
 
 permissions:
-  contents: write   # to push the JSONL commit
+  contents: write   # to commit the JSONL and SUMMARY.md
 
 jobs:
-  publish:
+  # ─────────────────────────────────────────────────────────────────────────
+  # MODE A — Self-hosted runner: diagnose live, no MinIO
+  # ─────────────────────────────────────────────────────────────────────────
+  publish-self-hosted:
+    name: "Publish (self-hosted runner — no MinIO)"
+    # EDIT: change to your self-hosted runner label, or comment out this job
+    # and uncomment the publish-minio job below.
+    runs-on: [self-hosted, cluster]
+    if: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build cha
+        run: |
+          VERSION=$(git describe --tags --always 2>/dev/null || echo "dev")
+          go build -ldflags "-X main.version=${VERSION}" -o cha ./cmd/cha
+          echo "Built cha ${VERSION}"
+
+      - name: Resolve target date
+        id: date
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            echo "date=${{ github.event.inputs.date }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "date=$(date -u -d 'yesterday' +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Diagnose, anonymize, append JSONL
+        run: |
+          DATE=${{ steps.date.outputs.date }}
+          RUN_ID="run-${DATE}"
+          mkdir -p runs
+          ./cha diagnose --live --format json \
+            | ./cha anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" \
+            >> runs/"$DATE".jsonl
+          echo "Appended 1 record to runs/$DATE.jsonl"
+
+      - name: Regenerate SUMMARY.md
+        run: ./cha summarize runs/ > runs/SUMMARY.md
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DATE=${{ steps.date.outputs.date }}
+          git add runs/"$DATE".jsonl runs/SUMMARY.md
+          git diff --cached --quiet || git commit -m "runs: add anonymized run for $DATE"
+          git push
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # MODE B — GitHub-hosted runner: pull from MinIO, creds from Vault
+  # ─────────────────────────────────────────────────────────────────────────
+  publish-minio:
+    name: "Publish (GitHub-hosted runner + MinIO, creds from Vault)"
     runs-on: ubuntu-latest
+    # Set to `true` when switching to Mode B (requires internet-reachable MinIO).
+    if: false
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -47,6 +127,18 @@ jobs:
 
       - name: Build cha
         run: go build -o cha ./cmd/cha
+
+      - name: Pull MinIO credentials from Vault
+        id: vault
+        uses: hashicorp/vault-action@v3
+        with:
+          url: https://vault.baisoln.com
+          token: ${{ secrets.VAULT_TOKEN }}
+          secrets: |
+            secret/data/t6-apps/cha/config minio_endpoint       | MINIO_ENDPOINT ;
+            secret/data/t6-apps/cha/config minio_access_key     | MINIO_ACCESS_KEY ;
+            secret/data/t6-apps/cha/config minio_secret_key     | MINIO_SECRET_KEY ;
+            secret/data/t6-apps/cha/config minio_bucket         | MINIO_BUCKET
 
       - name: Install MinIO client (mc)
         run: |
@@ -62,25 +154,24 @@ jobs:
             echo "date=$(date -u -d 'yesterday' +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Configure mc alias
-        env:
-          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
-          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
-          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
-        run: ./mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
-
-      - name: Pull run files from MinIO
-        env:
-          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+      - name: Configure mc alias and pull run files from MinIO
         run: |
           DATE=${{ steps.date.outputs.date }}
           mkdir -p /tmp/cha-runs/"$DATE"
-          ./mc cp --recursive minio/"$MINIO_BUCKET"/runs/"$DATE"/ /tmp/cha-runs/"$DATE"/ || true
-          COUNT=$(find /tmp/cha-runs/"$DATE" -name "*.json" | wc -l)
-          echo "Downloaded $COUNT run file(s) for $DATE"
-          if [ "$COUNT" -eq 0 ]; then
-            echo "No run files found for $DATE — skipping."
+          # mc alias set probes MinIO with a signed request; if the endpoint is
+          # private/unreachable from this runner, treat it as "no files" rather
+          # than a hard failure so the job completes cleanly.
+          if ! ./mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" 2>&1; then
+            echo "::warning::MinIO endpoint unreachable from this runner — skipping publish."
             echo "skip=true" >> "$GITHUB_ENV"
+          else
+            ./mc cp --recursive minio/"$MINIO_BUCKET"/runs/"$DATE"/ /tmp/cha-runs/"$DATE"/ || true
+            COUNT=$(find /tmp/cha-runs/"$DATE" -name "*.json" | wc -l)
+            echo "Downloaded $COUNT run file(s) for $DATE"
+            if [ "$COUNT" -eq 0 ]; then
+              echo "No run files found for $DATE — skipping."
+              echo "skip=true" >> "$GITHUB_ENV"
+            fi
           fi
 
       - name: Anonymize and append JSONL
@@ -90,10 +181,10 @@ jobs:
           mkdir -p runs
           for f in /tmp/cha-runs/"$DATE"/*.json; do
             RUN_ID="$(basename "$f" .json)"
-            ./cha anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" "$f" >> runs/"$DATE".jsonl
+            ./cha anonymize --run-id "$RUN_ID" --timestamp "${DATE}T02:00:00Z" "$f" \
+              >> runs/"$DATE".jsonl
           done
-          LINES=$(wc -l < runs/"$DATE".jsonl)
-          echo "Appended $LINES record(s) to runs/$DATE.jsonl"
+          echo "Appended $(wc -l < runs/"$DATE".jsonl) record(s) to runs/$DATE.jsonl"
 
       - name: Regenerate SUMMARY.md
         if: env.skip != 'true'

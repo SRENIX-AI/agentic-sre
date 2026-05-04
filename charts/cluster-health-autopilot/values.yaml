@@ -67,6 +67,42 @@ vaultProbe:
       name: ""                    # K8s Secret holding a Vault token
       key: "token"                # key within that Secret
 
+# GitHub Actions self-hosted runner — Mode A of the WS-C publish pipeline.
+# Deploys myoung34/github-runner inside the cluster so the nightly
+# publish-runs workflow can call `cha diagnose --live` directly without
+# needing an internet-reachable MinIO endpoint.
+#
+# Prerequisites:
+#   1. A GitHub PAT (classic, repo scope) or fine-grained token (Actions:write)
+#      stored in Vault at: secret/t6-apps/cha/config → github_pat
+#   2. ESO ClusterSecretStore "vault-backend" already configured.
+#   3. Set runner.repoUrl to the full repo URL.
+#
+# Once deployed, flip publish-runs.yml: publish-self-hosted.if: true
+#                                        publish-minio.if: false
+runner:
+  enabled: false
+  repoUrl: "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+  labels: "self-hosted,cluster"        # must match runs-on in publish-runs.yml
+  name: "cha-cluster-runner"
+  # Runner image — ubuntu-jammy = Ubuntu 22.04; ubuntu-noble = 24.04
+  image: "myoung34/github-runner:ubuntu-jammy"
+  # Secret that holds ACCESS_TOKEN for runner registration.
+  # Created by the ExternalSecret below — do not create manually.
+  tokenSecretName: "cha-runner-token"
+  tokenSecretKey: "ACCESS_TOKEN"
+  resources:
+    limits:
+      cpu: "2"
+      memory: 4Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  # Runner pod runs as root (required by myoung34/github-runner).
+  # It does NOT use the shared podSecurityContext.
+  nodeSelector: {}
+  tolerations: []
+
 # RBAC. Keep enabled — the CronJob will fail without these.
 rbac:
   create: true

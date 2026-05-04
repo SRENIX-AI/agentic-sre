@@ -86,4 +86,8 @@ var (
 	// Manager, GCP Secret Manager, etc.
 	GVRSecretStore        = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "secretstores"}
 	GVRClusterSecretStore = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "clustersecretstores"}
+
+	// cert-manager Certificate resources. Used by CertExpiry analyzer.
+	// Returns an empty list (not an error) when cert-manager is not installed.
+	GVRCertificate = schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificates"}
 )

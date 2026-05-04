@@ -38,6 +38,7 @@ var CaptureGVRs = []schema.GroupVersionResource{
 	GVRExtSecret,
 	GVRCNPGCluster,
 	GVRCephCluster,
+	GVRCertificate,
 	// GVRSecret intentionally excluded — see comment above.
 }
 

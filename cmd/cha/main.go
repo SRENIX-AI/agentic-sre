@@ -452,6 +452,8 @@ func diagnoseCmd() *cobra.Command {
 				diagnose.SecretKeyMissing{},
 				diagnose.FailingExternalSecrets{},
 				diagnose.ProactiveSecretKeyCheck{},
+				diagnose.ImagePullAuth{},
+				diagnose.CertExpiry{},
 			}
 			// VaultPathMissing is opt-in: when --vault-addr is set we
 			// construct a client and append the analyzer. Live mode only

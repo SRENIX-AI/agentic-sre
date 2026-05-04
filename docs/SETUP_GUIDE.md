@@ -401,18 +401,186 @@ WS-C publishes anonymized daily run logs to `runs/` in the public repo so
 design partners and the community can see the analyzer's track record over
 time.
 
-### Prerequisites
+**MinIO is NOT a hard dependency for core CHA.** The diagnostic engine,
+Vault probe, auto-fixers, and DriftReport CRD all work without object storage.
+MinIO is only needed for Mode B of this pipeline.
 
-- A MinIO bucket (or S3-compatible) accessible from both the cluster CronJob
-  and GitHub Actions. The in-cluster MinIO at `minio.default.svc` (or the
-  cluster's MinIO Helm install) works fine.
-- A bucket named (e.g.) `cha-runs` with path structure:
-  `runs/YYYY-MM-DD/run-HHMMSS.json`
+### Choose your mode
 
-### Step 1 — configure the in-cluster CronJob to write JSON runs
+| | **Mode A — Private cluster** | **Mode B — Public cluster** |
+|---|---|---|
+| **Runner** | Self-hosted, inside the cluster | `ubuntu-latest` (GitHub cloud) |
+| **MinIO** | Not needed | Required (must be internet-reachable) |
+| **GH Actions secrets** | None | `VAULT_TOKEN` only |
+| **How it works** | Runner calls `cha diagnose --live` directly | Runner fetches Vault creds, pulls JSON runs from MinIO |
+| **Use when** | Cluster has no public IP / private network | Cluster exposes MinIO publicly (e.g. cloud S3) |
 
-Add a MinIO client sidecar or post-run upload step to the CronJob. The
-simplest approach: override the diagnose command in `values.yaml`:
+**This cluster uses Mode A** (bare-metal, private IP `192.168.0.x`).
+
+Switch modes by toggling the `if:` lines in
+`.github/workflows/publish-runs.yml`:
+
+```yaml
+# Mode A active (current):
+publish-self-hosted:
+  if: true
+publish-minio:
+  if: false
+
+# To switch to Mode B:
+publish-self-hosted:
+  if: false
+publish-minio:
+  if: true
+```
+
+---
+
+### Mode A — Private cluster setup (self-hosted runner)
+
+The nightly workflow runs inside the cluster as a Kubernetes pod. No MinIO,
+no external secrets — the runner has direct in-cluster API access via the
+`cha` ServiceAccount.
+
+#### Architecture
+
+```
+GitHub Actions
+  └─ dispatches job to runner pod (self-hosted,cluster)
+       └─ runs inside cluster-health-autopilot namespace
+            ├─ go build ./cmd/cha              (build fresh binary)
+            ├─ ./cha diagnose --live           (in-cluster API calls via cha SA)
+            ├─ ./cha anonymize                 (SHA-256 hashing)
+            └─ git commit + push runs/*.jsonl  (GitHub PAT from Vault)
+```
+
+#### Prerequisites
+
+- ESO ClusterSecretStore `vault-backend` configured (see §6).
+- GitHub PAT stored in Vault (already done — see below).
+- `runner.enabled: true` in Helm values.
+
+#### Vault secret (already populated)
+
+`secret/t6-apps/cha/config` holds:
+
+```
+github_pat        → GitHub OAuth/PAT token (repo scope)
+minio_*           → MinIO service account (Mode B only; ignored in Mode A)
+```
+
+To update or rotate the PAT:
+
+```sh
+vault kv patch secret/t6-apps/cha/config \
+  github_pat="ghp_YOURNEWTOKENHERE"
+```
+
+#### Step A-1 — enable the runner via Helm
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set runner.enabled=true \
+  --set runner.repoUrl=https://github.com/Bionic-AI-Solutions/cluster-health-autopilot \
+  --set runner.labels=self-hosted,cluster \
+  --set runner.name=cha-cluster-runner
+```
+
+Or add to `values.yaml`:
+
+```yaml
+runner:
+  enabled: true
+  repoUrl: "https://github.com/Bionic-AI-Solutions/cluster-health-autopilot"
+  labels: "self-hosted,cluster"
+  name: "cha-cluster-runner"
+```
+
+This creates:
+- **ExternalSecret** `cha-runner-token` — pulls `github_pat` from Vault
+- **Deployment** `cha-runner` — `myoung34/github-runner:ubuntu-22.04` pod
+  using the `cha` ServiceAccount for in-cluster API access
+
+#### Step A-2 — verify runner is registered
+
+```sh
+kubectl -n cluster-health-autopilot get deployment cha-cluster-health-autopilot-runner
+kubectl -n cluster-health-autopilot logs -l app.kubernetes.io/component=runner | tail -10
+# Look for: "Runner successfully added" and "Listening for Jobs"
+```
+
+Also verify in GitHub: **Settings → Actions → Runners** — the runner
+`cha-cluster-runner` should appear as **Idle**.
+
+#### Step A-3 — trigger a first manual run
+
+```sh
+gh workflow run publish-runs.yml --field date=$(date -u -d 'yesterday' +%Y-%m-%d)
+# Check result:
+gh run list --workflow=publish-runs.yml --limit=1
+git pull && ls runs/
+```
+
+---
+
+### Mode B — Public cluster setup (GitHub-hosted runner + MinIO)
+
+Use this mode when the cluster exposes MinIO at a public internet address
+(e.g. AWS S3, GCS, or an on-prem MinIO behind a real public IP — **not** a
+private IP like `192.168.0.x`, which GitHub runners cannot reach).
+
+#### Prerequisites
+
+- MinIO accessible at a public URL from GitHub runner IPs.
+- `vault.baisoln.com` reachable from the internet (already true).
+- `VAULT_TOKEN` set as a GH Actions secret (already done).
+
+#### Vault secret
+
+`secret/t6-apps/cha/config` must have (already populated; update endpoint
+if your public MinIO URL changes):
+
+```sh
+vault kv patch secret/t6-apps/cha/config \
+  minio_endpoint="https://YOUR_PUBLIC_S3_ENDPOINT"
+```
+
+> For this cluster: the in-cluster MinIO at `192.168.0.x` is **not** reachable
+> from GitHub runners. Mode B would require a Cloudflare Tunnel or cloud S3.
+
+#### Vault policy (already created)
+
+```hcl
+# policy: cha-publish-runs
+path "secret/data/t6-apps/cha/config" {
+  capabilities = ["read"]
+}
+```
+
+Recreate if needed:
+
+```sh
+vault policy write cha-publish-runs /tmp/cha-policy.hcl
+```
+
+#### Step B-1 — mint a GH Actions token
+
+```sh
+vault token create \
+  -policy=cha-publish-runs \
+  -ttl=87600h \
+  -display-name="cha-gh-actions" \
+  -no-default-policy
+# Add the printed token to: Settings → Secrets → Actions → VAULT_TOKEN
+```
+
+#### Step B-2 — wire the CronJob to write JSON to MinIO
+
+The CronJob must upload each run to `cha-runs/runs/YYYY-MM-DD/` before
+02:00 UTC when the nightly action fires. Override the diagnose command in
+`values.yaml`:
 
 ```yaml
 diagnose:
@@ -423,47 +591,60 @@ diagnose:
       cha diagnose --live --format json > /tmp/run.json
       mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
       mc cp /tmp/run.json minio/${MINIO_BUCKET}/runs/$(date +%Y-%m-%d)/run-$(date +%H%M%S).json
+  envFrom:
+    - secretRef:
+        name: cha-minio-creds
 ```
 
-Set `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, and
-`MINIO_BUCKET` as secrets in the `cluster-health-autopilot` namespace (via
-Vault → ExternalSecret, not plaintext in values).
+Supply the env vars via Vault → ExternalSecret (already in Vault):
 
-### Step 2 — set GitHub Actions secrets
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cha-minio-creds
+  namespace: cluster-health-autopilot
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: cha-minio-creds
+  data:
+    - secretKey: MINIO_ENDPOINT
+      remoteRef: { key: t6-apps/cha/config, property: minio_endpoint }
+    - secretKey: MINIO_ACCESS_KEY
+      remoteRef: { key: t6-apps/cha/config, property: minio_access_key }
+    - secretKey: MINIO_SECRET_KEY
+      remoteRef: { key: t6-apps/cha/config, property: minio_secret_key }
+    - secretKey: MINIO_BUCKET
+      remoteRef: { key: t6-apps/cha/config, property: minio_bucket }
+```
 
-In the repo's Settings → Secrets and variables → Actions, add:
+---
 
-| Secret | Value |
-|---|---|
-| `MINIO_ENDPOINT` | e.g. `https://minio.example.com:9000` |
-| `MINIO_ACCESS_KEY` | MinIO access key ID |
-| `MINIO_SECRET_KEY` | MinIO secret access key |
-| `MINIO_BUCKET` | bucket name, e.g. `cha-runs` |
+### What the workflow does (both modes)
 
-### Step 3 — enable the nightly workflow
+`.github/workflows/publish-runs.yml` fires at 02:00 UTC daily:
 
-The workflow is at `.github/workflows/publish-runs.yml`. It fires at 02:00
-UTC daily (after the in-cluster CronJob has written that day's run).
+| Step | Mode A | Mode B |
+|---|---|---|
+| Get run data | `cha diagnose --live --format json` (in-cluster) | Pull JSON files from MinIO |
+| Anonymize | `cha anonymize --run-id ... --timestamp ...` | Same |
+| Append | `runs/YYYY-MM-DD.jsonl` | Same |
+| Summarize | `cha summarize runs/` → `runs/SUMMARY.md` | Same |
+| Commit | `git commit + push` | Same |
 
-It:
-1. Downloads the day's JSON run(s) from MinIO
-2. Runs `cha anonymize` on each file to produce anonymized JSONL
-3. Appends to `runs/YYYY-MM-DD.jsonl`
-4. Runs `cha summarize runs/` to regenerate `runs/SUMMARY.md`
-5. Commits and pushes
+No secrets appear in committed files — only deterministic SHA-256 hashes.
 
-No secrets appear in the committed files — only hashed tokens.
-
-### Step 4 — link SUMMARY.md from README
-
-Add to your README:
+### Link SUMMARY.md from the README
 
 ```markdown
 ## Live run data
 
 [`runs/SUMMARY.md`](runs/SUMMARY.md) — anonymized daily diagnostics from
-the production cluster, updated nightly. Demonstrates false-positive-free
-detection over X+ days.
+the production cluster, updated nightly.
 ```
 
 ### Trigger manually (first run)
@@ -563,9 +744,26 @@ git pull && ls runs/
 - This is rejected by the Vault client as a security measure (v0.4+).
 - Fix the ExternalSecret spec to use a clean path.
 
-### Run-log pipeline: "No run files found for DATE"
+### Run-log pipeline: "No run files found for DATE" (Mode B only)
 
-- The in-cluster CronJob must be writing JSON to MinIO before the nightly
-  publish Action fires (02:00 UTC). Check the CronJob schedule and MinIO
-  bucket contents.
+- The in-cluster CronJob must be writing JSON to the `cha-runs` MinIO bucket
+  before the 02:00 UTC GH Action fires. Check the CronJob schedule and:
+  ```sh
+  mc ls minio/cha-runs/runs/YYYY-MM-DD/
+  ```
+- Verify the `cha-minio-creds` ExternalSecret is synced:
+  ```sh
+  kubectl get externalsecret cha-minio-creds -n cluster-health-autopilot
+  ```
 - Manually trigger: `gh workflow run publish-runs.yml --field date=YYYY-MM-DD`
+
+### Run-log pipeline: Vault credentials fetch fails in GH Action
+
+- Verify `VAULT_TOKEN` is set in Settings → Secrets and variables → Actions.
+- The token must have the `cha-publish-runs` policy. Check:
+  ```sh
+  vault token lookup <token>
+  # "policies" should include "cha-publish-runs"
+  ```
+- `vault.baisoln.com` must be reachable from GitHub's runner network (it is
+  public; verify with `curl https://vault.baisoln.com/v1/sys/health`).
