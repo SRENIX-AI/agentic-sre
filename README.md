@@ -100,6 +100,12 @@ Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-au
 - Webhook: ExternalSecret from Vault — no plaintext credentials in any manifest.
 - <100 MB RAM, <100 ms CPU, <60 s wall-clock per run.
 
+## Docs
+
+- **[docs/ONE_PAGER.md](docs/ONE_PAGER.md)** — design-partner brief; the elevator-pitch version of this README with pricing and validation.
+- **[docs/FAILURE_MODES.md](docs/FAILURE_MODES.md)** — every fixer + analyzer in the catalog: symptom, root cause, why it's safe, real-world example, source link.
+- **[docs/AI_USAGE.md](docs/AI_USAGE.md)** — what AI is and isn't used for, and where it could plausibly enter later. Short answer: zero AI in the hot path; deliberate.
+
 ## License
 
 [Apache License 2.0](LICENSE) for the engine and the default signature library.
