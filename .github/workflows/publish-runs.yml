@@ -57,8 +57,7 @@ jobs:
     # EDIT: change to your self-hosted runner label, or comment out this job
     # and uncomment the publish-minio job below.
     runs-on: [self-hosted, cluster]
-    # Remove the `if` condition below once you have a self-hosted runner:
-    if: false
+    if: true
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -110,8 +109,8 @@ jobs:
   publish-minio:
     name: "Publish (GitHub-hosted runner + MinIO, creds from Vault)"
     runs-on: ubuntu-latest
-    # Set to `true` (or remove this `if`) when using Mode B.
-    if: true
+    # Set to `true` when switching to Mode B (requires internet-reachable MinIO).
+    if: false
     steps:
       - name: Checkout
         uses: actions/checkout@v5
