@@ -70,7 +70,10 @@ jobs:
           go-version-file: go.mod
 
       - name: Build cha
-        run: go build -o cha ./cmd/cha
+        run: |
+          VERSION=$(git describe --tags --always 2>/dev/null || echo "dev")
+          go build -ldflags "-X main.version=${VERSION}" -o cha ./cmd/cha
+          echo "Built cha ${VERSION}"
 
       - name: Resolve target date
         id: date
