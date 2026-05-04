@@ -1,0 +1,42 @@
+name: Publish Helm Chart
+
+# Runs whenever charts/ changes land on main (i.e. after a PR merge).
+# chart-releaser detects which charts changed, packages them, creates a
+# GitHub Release for each chart version, and updates index.yaml on gh-pages.
+#
+# Helm repo URL (add once, use forever):
+#   helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
+#   helm repo update
+#   helm install cha cha/cluster-health-autopilot ...
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "charts/**"
+
+permissions:
+  contents: write   # push to gh-pages, create chart releases
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # chart-releaser needs full history to detect changes
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.7.0
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
