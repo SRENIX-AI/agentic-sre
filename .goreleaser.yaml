@@ -72,6 +72,8 @@ dockers:
     extra_files:
       - cmd
       - internal
+      - pkg
+      - catalog
       - go.mod
       - go.sum
     goarch: amd64
@@ -97,6 +99,8 @@ dockers:
     extra_files:
       - cmd
       - internal
+      - pkg
+      - catalog
       - go.mod
       - go.sum
     goarch: arm64
