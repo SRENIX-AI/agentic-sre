@@ -15,6 +15,8 @@ RUN go mod download
 # Now the source.
 COPY cmd ./cmd
 COPY internal ./internal
+COPY pkg ./pkg
+COPY catalog ./catalog
 
 # VERSION may be overridden at build time:
 #   docker build --build-arg VERSION=v0.1.0 ...
