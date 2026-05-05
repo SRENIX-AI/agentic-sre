@@ -22,13 +22,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// Source, Mutator, and Mode are the canonical types from pkg/snapshot,
-// re-exported here so internal packages compile without import changes.
-type (
-	Source  = pkgsnapshot.Source
-	Mutator = pkgsnapshot.Mutator
-	Mode    = pkgsnapshot.Mode
-)
+// Source is re-exported from pkg/snapshot; see that package for the canonical definition.
+type Source = pkgsnapshot.Source
+
+// Mutator is re-exported from pkg/snapshot; see that package for the canonical definition.
+type Mutator = pkgsnapshot.Mutator
+
+// Mode is re-exported from pkg/snapshot; see that package for the canonical definition.
+type Mode = pkgsnapshot.Mode
 
 // Mode constants re-exported from pkg/snapshot.
 const (

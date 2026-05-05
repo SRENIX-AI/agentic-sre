@@ -14,15 +14,20 @@ package probe
 
 import pkgprobe "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
 
-// Probe, Finding, ComponentResult, Result, and Severity are re-exported
-// from pkg/probe.
-type (
-	Probe           = pkgprobe.Probe
-	Finding         = pkgprobe.Finding
-	ComponentResult = pkgprobe.ComponentResult
-	Result          = pkgprobe.Result
-	Severity        = pkgprobe.Severity
-)
+// Probe is re-exported from pkg/probe; see that package for the canonical definition.
+type Probe = pkgprobe.Probe
+
+// Finding is re-exported from pkg/probe; see that package for the canonical definition.
+type Finding = pkgprobe.Finding
+
+// ComponentResult is re-exported from pkg/probe; see that package for the canonical definition.
+type ComponentResult = pkgprobe.ComponentResult
+
+// Result is re-exported from pkg/probe; see that package for the canonical definition.
+type Result = pkgprobe.Result
+
+// Severity is re-exported from pkg/probe; see that package for the canonical definition.
+type Severity = pkgprobe.Severity
 
 // Severity constants re-exported from pkg/probe.
 const (

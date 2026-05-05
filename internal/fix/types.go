@@ -25,10 +25,14 @@ package fix
 
 import pkgfix "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/fix"
 
-// Action, SkipReason, Result, and Fixer are re-exported from pkg/fix.
-type (
-	Action     = pkgfix.Action
-	SkipReason = pkgfix.SkipReason
-	Result     = pkgfix.Result
-	Fixer      = pkgfix.Fixer
-)
+// Action is re-exported from pkg/fix; see that package for the canonical definition.
+type Action = pkgfix.Action
+
+// SkipReason is re-exported from pkg/fix; see that package for the canonical definition.
+type SkipReason = pkgfix.SkipReason
+
+// Result is re-exported from pkg/fix; see that package for the canonical definition.
+type Result = pkgfix.Result
+
+// Fixer is re-exported from pkg/fix; see that package for the canonical definition.
+type Fixer = pkgfix.Fixer

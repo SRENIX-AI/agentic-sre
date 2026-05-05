@@ -18,8 +18,10 @@ package diagnose
 
 import pkgdiagnose "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
 
-// Diagnostic and Analyzer are re-exported from pkg/diagnose.
-type (
-	Diagnostic = pkgdiagnose.Diagnostic
-	Analyzer   = pkgdiagnose.Analyzer
-)
+// Diagnostic is re-exported from pkg/diagnose; see that package for the
+// canonical definition.
+type Diagnostic = pkgdiagnose.Diagnostic
+
+// Analyzer is re-exported from pkg/diagnose; see that package for the
+// canonical definition.
+type Analyzer = pkgdiagnose.Analyzer

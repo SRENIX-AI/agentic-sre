@@ -70,7 +70,7 @@ type Mode int
 
 // Mode constants.
 const (
-	ModeLive     Mode = iota
+	ModeLive Mode = iota
 	ModeSnapshot
 )
 
