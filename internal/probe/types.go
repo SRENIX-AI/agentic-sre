@@ -5,48 +5,33 @@
 //
 // Each probe is responsible for producing a ComponentResult plus zero or more
 // Issues / Warnings that the loop-runner aggregates into a final report.
+//
+// The canonical Probe interface and result types live in pkg/probe.
+// The aliases below keep all internal implementations compiling unchanged;
+// they are identical types, so any implementation here satisfies the
+// exported interface expected by pkg/registry.
 package probe
 
-import (
-	"context"
+import pkgprobe "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-)
+// Probe is re-exported from pkg/probe; see that package for the canonical definition.
+type Probe = pkgprobe.Probe
 
-// Severity describes a finding level.
-type Severity string
+// Finding is re-exported from pkg/probe; see that package for the canonical definition.
+type Finding = pkgprobe.Finding
 
-// Severity values used on Findings.
+// ComponentResult is re-exported from pkg/probe; see that package for the canonical definition.
+type ComponentResult = pkgprobe.ComponentResult
+
+// Result is re-exported from pkg/probe; see that package for the canonical definition.
+type Result = pkgprobe.Result
+
+// Severity is re-exported from pkg/probe; see that package for the canonical definition.
+type Severity = pkgprobe.Severity
+
+// Severity constants re-exported from pkg/probe.
 const (
-	SeverityInfo     Severity = "info"
-	SeverityWarning  Severity = "warning"
-	SeverityCritical Severity = "critical"
+	SeverityInfo     = pkgprobe.SeverityInfo
+	SeverityWarning  = pkgprobe.SeverityWarning
+	SeverityCritical = pkgprobe.SeverityCritical
 )
-
-// Finding is a single observation surfaced by a probe.
-type Finding struct {
-	Component   string   `json:"component"` // "Ceph", "PostgreSQL", "Service: LiveKit SIP", ...
-	Severity    Severity `json:"severity"`
-	Message     string   `json:"message"`
-	Remediation string   `json:"remediation,omitempty"` // Optional kubectl-ready hint
-}
-
-// ComponentResult is the per-component status block that ends up in the
-// "Component Status" section of the Slack report.
-type ComponentResult struct {
-	Component string `json:"component"`
-	Status    string `json:"status"` // "HEALTHY" / "DEGRADED" / "CRITICAL" / "PROBE_FAILED" / "SKIPPED"
-	Detail    string `json:"detail"`
-}
-
-// Result is the output of a single probe.
-type Result struct {
-	Component ComponentResult `json:"component"`
-	Findings  []Finding       `json:"findings,omitempty"`
-}
-
-// Probe is the contract every health probe implements.
-type Probe interface {
-	Name() string
-	Run(ctx context.Context, src snapshot.Source) Result
-}
