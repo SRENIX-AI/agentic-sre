@@ -227,7 +227,11 @@ helm repo update
 ### 3.1 — Minimal install (diagnostics only, daily 09:00 UTC)
 
 ```bash
-helm install cha cha/cluster-health-autopilot \
+# Clone the repo first if you haven't already
+git clone https://github.com/Bionic-AI-Solutions/cluster-health-autopilot.git
+cd cluster-health-autopilot
+
+helm install cha ./charts/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --create-namespace
 ```
@@ -269,14 +273,28 @@ DriftReports are Kubernetes objects — they integrate with any existing alertin
 
 ### 3.4 — Enable Slack reporting
 
-```bash
-# First, create a Secret with your webhook URL
-kubectl create secret generic cha-slack-webhook \
-  --from-literal=WEBHOOK_URL="https://hooks.slack.com/services/..." \
-  --namespace cluster-health-autopilot
+Create the Secret. Use `printf` (not `echo`) to avoid embedding a trailing newline in
+the URL — a hidden newline causes a `parse` error at post time:
 
-# Upgrade with Slack enabled
-helm upgrade cha cha/cluster-health-autopilot \
+```bash
+printf '%s' 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL' \
+  | kubectl create secret generic cha-slack-webhook \
+      --from-file=WEBHOOK_URL=/dev/stdin \
+      -n cluster-health-autopilot
+```
+
+Verify the value looks clean (no `$` before the bash prompt means no trailing newline):
+
+```bash
+kubectl get secret cha-slack-webhook -n cluster-health-autopilot \
+  -o jsonpath='{.data.WEBHOOK_URL}' | base64 -d | cat -A
+```
+
+Enable Slack in the Helm release. Always use the local chart path (not `cha/cluster-health-autopilot`
+from the repo) so `--reuse-values` picks up the correct `appVersion`:
+
+```bash
+helm upgrade cha ./charts/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --reuse-values \
   --set slack.enabled=true \
