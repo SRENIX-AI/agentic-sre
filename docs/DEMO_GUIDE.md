@@ -224,8 +224,16 @@ helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
 helm repo update
 ```
 
-### 3.1 — Minimal install (diagnostics only, daily 09:00 UTC)
+### 3.1 — Install (scheduled diagnostics + optional real-time watcher)
 
+CHA has two complementary operational layers. Deploy one or both depending on what you want to show:
+
+| Layer | Command | Latency | Best for |
+|---|---|---|---|
+| **CronJob** `diagnose` | daily at 09:00 UTC | minutes | scheduled audit, WS-C JSONL evidence |
+| **Watcher** `watch --live` | event-driven, ~10 s debounce | seconds | on-call alerting, live demos |
+
+**Minimal install (scheduled diagnostics only)**:
 ```bash
 helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
@@ -234,8 +242,20 @@ helm install cha cha/cluster-health-autopilot \
 
 This deploys:
 - One `diagnose` CronJob (runs daily at 09:00 UTC)
-- A `ServiceAccount` + `ClusterRole` (read-only: pods, nodes, pvcs, secrets key-names, externalsecrets, cnpg, ceph, certs)
+- A `ServiceAccount` + `ClusterRole` (read-only + `watch` verb: pods, nodes, pvcs, secrets key-names, externalsecrets, cnpg, ceph, certs)
 - DriftReport CRD writing enabled
+
+**Recommended for live demos — also enable the watcher**:
+```bash
+helm install cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --create-namespace \
+  --set watcher.enabled=true \
+  --set slack.enabled=true \
+  --set slack.webhookSecretName=cha-slack-webhook
+```
+
+The watcher is a long-running `Deployment` that reacts within seconds of a cluster event — no manual job triggers needed (see Part 5). The CronJob and watcher run concurrently and serve different purposes.
 
 Verify the install:
 ```bash
@@ -243,7 +263,9 @@ kubectl get all -n cluster-health-autopilot
 kubectl get clusterrole | grep cha
 ```
 
-### 3.2 — Trigger a manual run (don't wait for the cron)
+### 3.2 — On-demand run (one-shot audit without waiting for the cron)
+
+For an immediate audit snapshot — useful when you want to confirm the current cluster state before or after a change:
 
 ```bash
 kubectl create job --from=cronjob/cha-cluster-health-autopilot-diagnose cha-diagnose-manual \
@@ -253,9 +275,11 @@ kubectl logs -f job/cha-diagnose-manual -n cluster-health-autopilot
 
 You will see the same probe + diagnostic output as the snapshot mode, but against the live cluster.
 
+> **Continuous alternative**: Once the watcher is deployed (Part 5), you no longer need to trigger manual jobs for real-time detection. The watcher reacts within seconds of each Kubernetes event and keeps DriftReports up to date continuously. Use the manual CronJob trigger for on-demand audits or compliance snapshots.
+
 ### 3.3 — Inspect DriftReport CRDs (kubectl-queryable diagnostics)
 
-After the CronJob (or manual job) runs:
+After the CronJob, manual job, or watcher cycle runs:
 ```bash
 kubectl get driftreports -A
 # NAMESPACE   NAME                              AGE
@@ -302,8 +326,39 @@ helm upgrade cha cha/cluster-health-autopilot \
 
 > Always demo remediation in dry-run first. The whitelist is narrow and intentional.
 
-### 4.1 — Enable the remediate CronJob (dry-run first)
+CHA offers two remediation paths — both use the same whitelisted fixers:
 
+| Path | Trigger | Latency | When to use |
+|---|---|---|---|
+| **Watcher `--remedy`** | event-driven (recommended) | seconds | live demos, on-call automation |
+| **Remediate CronJob** | scheduled (opt-in) | daily or on-demand | scheduled batch cleanup |
+
+For live demos, the watcher with `--remedy` is the best story: a failure appears, CHA detects and fixes it within seconds, Slack confirms the resolution — no manual job triggers.
+
+### 4.1 — Enable dry-run remediation (verify what would be fixed)
+
+**Primary: watcher in dry-run mode**
+
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.enabled=true \
+  --set watcher.remedy.enabled=true \
+  --set watcher.remedy.dryRun=true
+```
+
+Watch the logs to see dry-run output on the next event:
+```bash
+kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot
+# [DRY-RUN] Would delete pod staging/old-deploy-abc123 (StaleErrorPods)
+# [DRY-RUN] Would delete Job billing/billing-sync-1704067200 (StuckJobsWithBadSecretRef)
+```
+
+**Alternative: one-off CronJob trigger (scheduled or on-demand)**
+
+Enable the remediate CronJob for batch/scheduled cleanup:
 ```bash
 helm upgrade cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
@@ -317,12 +372,6 @@ Trigger a manual remediation run:
 kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-dryrun \
   -n cluster-health-autopilot
 kubectl logs -f job/cha-remediate-dryrun -n cluster-health-autopilot
-```
-
-The output will show what *would* be fixed, without touching the cluster:
-```
-[DRY-RUN] Would delete pod staging/old-deploy-abc123 (StaleErrorPods: pod is Error state, owned by completed Job)
-[DRY-RUN] Would delete Job billing/billing-sync-1704067200 (StuckJobsWithBadSecretRef: Job frozen, CronJob has newer run pending)
 ```
 
 ### 4.2 — The three whitelisted fixers
@@ -368,16 +417,37 @@ kubectl get pods -n default -l job-name=crash-demo
 # crash-demo-abc12        0/1     Error    0          45s
 ```
 
-Run `cha remediate` in dry-run to confirm detection:
+**Primary path — watcher detects and fixes automatically**:
+
+The watcher fires within ~10–15 seconds of the pod entering `Error` state. Watch the logs:
 ```bash
+kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot
+# watcher: event-triggered cycle
+# [DRY-RUN] Would delete pod default/crash-demo-abc12 (StaleErrorPods)
+```
+
+Switch the watcher to live mode:
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.remedy.dryRun=false
+```
+
+The next event cycle deletes the pod automatically. Slack receives a combined report: what was fixed + the post-fix diagnostic state.
+
+**Alternative path — on-demand CronJob trigger**:
+
+If you prefer to demonstrate the CronJob flow instead:
+```bash
+# Confirm detection (dry-run)
 kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-check \
   -n cluster-health-autopilot
 kubectl logs -f job/cha-remediate-check -n cluster-health-autopilot
 # [DRY-RUN] Would delete pod default/crash-demo-abc12 (StaleErrorPods)
-```
 
-Switch to live mode and confirm:
-```bash
+# Switch to live and run
 helm upgrade cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --reuse-values \
@@ -387,19 +457,136 @@ kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-rem
   -n cluster-health-autopilot
 kubectl logs -f job/cha-remediate-live -n cluster-health-autopilot
 # Deleted pod default/crash-demo-abc12 (StaleErrorPods)
+```
 
-# Verify pod is gone
+Verify the pod is gone:
+```bash
 kubectl get pods -n default -l job-name=crash-demo
 # No resources found.
 ```
 
 ---
 
-## Part 5 — Snapshot Capture (Your Own Cluster, Zero-Trust)
+## Part 5 — Event-Driven Watcher (Real-Time Alerts)
+
+> **New in v0.9.0.** Instead of waiting for a CronJob tick, the watcher reacts
+> within seconds of a Kubernetes event. Great for showing how CHA integrates into
+> an on-call workflow.
+
+### 5.1 — Enable the watcher via Helm
+
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.enabled=true \
+  --set slack.enabled=true \
+  --set slack.webhookSecretName=cha-slack-webhook
+```
+
+This deploys a long-running `Deployment` (single replica, `Recreate` strategy)
+that watches all resource types CHA already analyzes.
+
+Verify it's running:
+
+```bash
+kubectl get deployment -n cluster-health-autopilot
+# NAME                             READY   UP-TO-DATE   AVAILABLE
+# cha-...-watcher                  1/1     1            1
+
+kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot
+# watcher: pre-populated seen map with N DriftReports
+# watcher: initial diagnose cycle
+# watcher: driftreports: 0 created, N updated, 0 deleted
+```
+
+### 5.2 — Slack deduplication behavior
+
+The Slack channel stays quiet as long as cluster state doesn't change:
+
+| Condition | Slack posts? |
+|---|---|
+| Diagnostic first appears | ✅ Yes |
+| Severity or message changes | ✅ Yes |
+| Diagnostic resolves | ✅ Yes (if `--slack-post-on-resolved=true`) |
+| Repeat interval expires (default 4 h) | ✅ Yes (reminder) |
+| Same diagnostic, same fingerprint | ❌ Silently skipped |
+
+Fingerprint = `SHA-256(subject | severity | message)`. DriftReport CRs are the
+durable source of truth; after a pod restart, the seen-map is seeded from
+existing DriftReport status so there is no Slack flood on rollout.
+
+### 5.3 — Live demo: inject a failure and watch Slack fire
+
+```bash
+# Inject a bad ExternalSecret to trigger a FailingExternalSecrets diagnostic
+kubectl apply -f - <<EOF
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: watcher-demo-bad-es
+  namespace: default
+spec:
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: watcher-demo-bad-es
+  data:
+    - secretKey: some-key
+      remoteRef:
+        key: secret/nonexistent-path
+        property: nonexistent-property
+EOF
+```
+
+Within ~10–15 seconds (debounce + one diagnose cycle), Slack receives:
+
+```
+*Cluster Health Autopilot — Watch* — 2026-05-07 09:42:01 UTC
+
+*🔔 Active Issues (1):*
+• ⚠️ *ExternalSecret/default/watcher-demo-bad-es*
+  ExternalSecret `default/watcher-demo-bad-es` not Ready: …
+```
+
+Clean up:
+
+```bash
+kubectl delete externalsecret watcher-demo-bad-es -n default
+# Slack gets a ✅ Resolved message within the next cycle.
+```
+
+### 5.4 — With --remedy: immediate fix + post-fix report
+
+Enable remediation on the watcher:
+
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.remedy.enabled=true
+```
+
+Now on each cycle, after the diagnose pass the watcher:
+1. Runs the whitelisted fixers (`StaleErrorPods`, `StuckJobsWithBadSecretRef`, `StuckRSPods`)
+2. Re-diagnoses post-fix to capture the accurate cluster state
+3. Posts a combined Slack message: what was fixed + remaining active issues
+
+**Talking points for the audience**:
+- Detection latency drops from minutes (CronJob) to seconds (watch event + 10 s debounce).
+- Slack remains quiet for stable clusters — no alert fatigue.
+- Remediation is the same whitelist as `cha remediate --live`; no new risk surface.
+- Pod restart does not re-flood Slack — DriftReport CRs serve as the durable state.
+
+---
+
+## Part 6 — Snapshot Capture (Your Own Cluster, Zero-Trust)
 
 Use this when a prospect wants to see CHA run against their cluster without giving you access.
 
-### 5.1 — They capture, you analyze
+### 6.1 — They capture, you analyze
 
 Send the prospect this one-liner (they run it; you never see their kubeconfig):
 
@@ -420,9 +607,11 @@ They send you the `.tgz`. You analyze it:
 
 ---
 
-## Part 6 — Nightly Run Pipeline (WS-C Evidence)
+## Part 7 — Nightly Run Pipeline (WS-C Evidence)
 
 > This section is for demos after Gate G3 (week 8 onward).
+>
+> The watcher (Part 5) handles real-time alerting. The nightly CronJob pipeline here is the **compliance evidence layer** — it produces immutable JSONL run logs, a rolling `SUMMARY.md`, and the `cha diagnose --format jsonl` output that WS-C requires. Both layers run concurrently; they serve different audiences.
 
 ```bash
 # View the accumulating run history
@@ -451,7 +640,7 @@ The `SUMMARY.md` is auto-generated nightly by the GitHub Actions workflow in Mod
 
 ---
 
-## Part 7 — Design-Partner Pitch Close
+## Part 8 — Design-Partner Pitch Close
 
 After the demo, hand the prospect three things:
 
@@ -461,7 +650,9 @@ After the demo, hand the prospect three things:
 
 3. **The `runs/SUMMARY.md` link** — live evidence that this runs daily in production.
 
-The ask: "Let us deploy the Helm chart to one non-prod namespace, let the CronJob run for two weeks, and compare the results to what your team found manually in the same period."
+The ask: "Let us deploy the Helm chart to one non-prod namespace with the watcher enabled. The watcher gives you immediate, event-driven alerts within seconds — no configuration beyond a Slack webhook. The CronJob runs in parallel to accumulate daily audit evidence. Two weeks of data, zero operator time, and we compare the results to what your team found manually in the same period."
+
+**CronJob vs. Watcher in one sentence**: the CronJob is your compliance ledger; the watcher is your on-call colleague that never sleeps.
 
 ---
 
@@ -475,8 +666,12 @@ The ask: "Let us deploy the Helm chart to one non-prod namespace, let the CronJo
 | Runner pod stays `Pending` | `kubectl describe pod -n cluster-health-autopilot -l app=cha-runner` — likely imagePullBackOff on `myoung34/github-runner:ubuntu-jammy` |
 | DriftReports not appearing | Check `kubectl logs -n cluster-health-autopilot job/<latest-diagnose-job>`; DriftReport CRD may need manual install: `kubectl apply -f charts/cluster-health-autopilot/crds/` |
 | `cha remediate --live` refuses in snapshot mode | Expected — fixers are type-system-gated. Must use `--live` flag with valid kubeconfig |
+| Watcher pod restarts in a loop | Check `kubectl logs deployment/cha-…-watcher`; likely kubeconfig missing or SA lacks `watch` verb. Run `helm upgrade` to pick up the updated ClusterRole |
+| Slack flooded after watcher pod restart | Expected only if DriftReport CRD is absent (seen-map cannot be seeded). Install the CRD: `kubectl apply -f charts/cluster-health-autopilot/templates/crd-driftreport.yaml` |
+| Watcher posts Slack on every resync | `--slack-repeat-interval` defaults to 4 h; reduce alert volume with `watcher.slack.repeatInterval: 0` to disable repeats |
+| Watcher not firing on CRD resources (e.g. ExternalSecrets) | Normal if the CRD is not installed in this cluster — the watcher skips the watch silently. Check logs for `watch … no matches for kind` |
 
-## Appendix B — Full Analyzer + Probe Catalog (v0.8.0)
+## Appendix B — Full Analyzer + Probe Catalog (v0.9.0)
 
 **Probes** (read cluster state, report findings):
 | Probe | What it checks |
