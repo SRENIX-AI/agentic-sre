@@ -224,8 +224,16 @@ helm repo add cha https://bionic-ai-solutions.github.io/cluster-health-autopilot
 helm repo update
 ```
 
-### 3.1 — Minimal install (diagnostics only, daily 09:00 UTC)
+### 3.1 — Install (scheduled diagnostics + optional real-time watcher)
 
+CHA has two complementary operational layers. Deploy one or both depending on what you want to show:
+
+| Layer | Command | Latency | Best for |
+|---|---|---|---|
+| **CronJob** `diagnose` | daily at 09:00 UTC | minutes | scheduled audit, WS-C JSONL evidence |
+| **Watcher** `watch --live` | event-driven, ~10 s debounce | seconds | on-call alerting, live demos |
+
+**Minimal install (scheduled diagnostics only)**:
 ```bash
 helm install cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
@@ -234,8 +242,20 @@ helm install cha cha/cluster-health-autopilot \
 
 This deploys:
 - One `diagnose` CronJob (runs daily at 09:00 UTC)
-- A `ServiceAccount` + `ClusterRole` (read-only: pods, nodes, pvcs, secrets key-names, externalsecrets, cnpg, ceph, certs)
+- A `ServiceAccount` + `ClusterRole` (read-only + `watch` verb: pods, nodes, pvcs, secrets key-names, externalsecrets, cnpg, ceph, certs)
 - DriftReport CRD writing enabled
+
+**Recommended for live demos — also enable the watcher**:
+```bash
+helm install cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --create-namespace \
+  --set watcher.enabled=true \
+  --set slack.enabled=true \
+  --set slack.webhookSecretName=cha-slack-webhook
+```
+
+The watcher is a long-running `Deployment` that reacts within seconds of a cluster event — no manual job triggers needed (see Part 5). The CronJob and watcher run concurrently and serve different purposes.
 
 Verify the install:
 ```bash
@@ -243,7 +263,9 @@ kubectl get all -n cluster-health-autopilot
 kubectl get clusterrole | grep cha
 ```
 
-### 3.2 — Trigger a manual run (don't wait for the cron)
+### 3.2 — On-demand run (one-shot audit without waiting for the cron)
+
+For an immediate audit snapshot — useful when you want to confirm the current cluster state before or after a change:
 
 ```bash
 kubectl create job --from=cronjob/cha-cluster-health-autopilot-diagnose cha-diagnose-manual \
@@ -253,9 +275,11 @@ kubectl logs -f job/cha-diagnose-manual -n cluster-health-autopilot
 
 You will see the same probe + diagnostic output as the snapshot mode, but against the live cluster.
 
+> **Continuous alternative**: Once the watcher is deployed (Part 5), you no longer need to trigger manual jobs for real-time detection. The watcher reacts within seconds of each Kubernetes event and keeps DriftReports up to date continuously. Use the manual CronJob trigger for on-demand audits or compliance snapshots.
+
 ### 3.3 — Inspect DriftReport CRDs (kubectl-queryable diagnostics)
 
-After the CronJob (or manual job) runs:
+After the CronJob, manual job, or watcher cycle runs:
 ```bash
 kubectl get driftreports -A
 # NAMESPACE   NAME                              AGE
@@ -302,8 +326,39 @@ helm upgrade cha cha/cluster-health-autopilot \
 
 > Always demo remediation in dry-run first. The whitelist is narrow and intentional.
 
-### 4.1 — Enable the remediate CronJob (dry-run first)
+CHA offers two remediation paths — both use the same whitelisted fixers:
 
+| Path | Trigger | Latency | When to use |
+|---|---|---|---|
+| **Watcher `--remedy`** | event-driven (recommended) | seconds | live demos, on-call automation |
+| **Remediate CronJob** | scheduled (opt-in) | daily or on-demand | scheduled batch cleanup |
+
+For live demos, the watcher with `--remedy` is the best story: a failure appears, CHA detects and fixes it within seconds, Slack confirms the resolution — no manual job triggers.
+
+### 4.1 — Enable dry-run remediation (verify what would be fixed)
+
+**Primary: watcher in dry-run mode**
+
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.enabled=true \
+  --set watcher.remedy.enabled=true \
+  --set watcher.remedy.dryRun=true
+```
+
+Watch the logs to see dry-run output on the next event:
+```bash
+kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot
+# [DRY-RUN] Would delete pod staging/old-deploy-abc123 (StaleErrorPods)
+# [DRY-RUN] Would delete Job billing/billing-sync-1704067200 (StuckJobsWithBadSecretRef)
+```
+
+**Alternative: one-off CronJob trigger (scheduled or on-demand)**
+
+Enable the remediate CronJob for batch/scheduled cleanup:
 ```bash
 helm upgrade cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
@@ -317,12 +372,6 @@ Trigger a manual remediation run:
 kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-dryrun \
   -n cluster-health-autopilot
 kubectl logs -f job/cha-remediate-dryrun -n cluster-health-autopilot
-```
-
-The output will show what *would* be fixed, without touching the cluster:
-```
-[DRY-RUN] Would delete pod staging/old-deploy-abc123 (StaleErrorPods: pod is Error state, owned by completed Job)
-[DRY-RUN] Would delete Job billing/billing-sync-1704067200 (StuckJobsWithBadSecretRef: Job frozen, CronJob has newer run pending)
 ```
 
 ### 4.2 — The three whitelisted fixers
@@ -368,16 +417,37 @@ kubectl get pods -n default -l job-name=crash-demo
 # crash-demo-abc12        0/1     Error    0          45s
 ```
 
-Run `cha remediate` in dry-run to confirm detection:
+**Primary path — watcher detects and fixes automatically**:
+
+The watcher fires within ~10–15 seconds of the pod entering `Error` state. Watch the logs:
 ```bash
+kubectl logs -f deployment/cha-cluster-health-autopilot-watcher \
+  -n cluster-health-autopilot
+# watcher: event-triggered cycle
+# [DRY-RUN] Would delete pod default/crash-demo-abc12 (StaleErrorPods)
+```
+
+Switch the watcher to live mode:
+```bash
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reuse-values \
+  --set watcher.remedy.dryRun=false
+```
+
+The next event cycle deletes the pod automatically. Slack receives a combined report: what was fixed + the post-fix diagnostic state.
+
+**Alternative path — on-demand CronJob trigger**:
+
+If you prefer to demonstrate the CronJob flow instead:
+```bash
+# Confirm detection (dry-run)
 kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-remediate-check \
   -n cluster-health-autopilot
 kubectl logs -f job/cha-remediate-check -n cluster-health-autopilot
 # [DRY-RUN] Would delete pod default/crash-demo-abc12 (StaleErrorPods)
-```
 
-Switch to live mode and confirm:
-```bash
+# Switch to live and run
 helm upgrade cha cha/cluster-health-autopilot \
   --namespace cluster-health-autopilot \
   --reuse-values \
@@ -387,8 +457,10 @@ kubectl create job --from=cronjob/cha-cluster-health-autopilot-remediate cha-rem
   -n cluster-health-autopilot
 kubectl logs -f job/cha-remediate-live -n cluster-health-autopilot
 # Deleted pod default/crash-demo-abc12 (StaleErrorPods)
+```
 
-# Verify pod is gone
+Verify the pod is gone:
+```bash
 kubectl get pods -n default -l job-name=crash-demo
 # No resources found.
 ```
@@ -514,7 +586,7 @@ Now on each cycle, after the diagnose pass the watcher:
 
 Use this when a prospect wants to see CHA run against their cluster without giving you access.
 
-### 5.1 — They capture, you analyze
+### 6.1 — They capture, you analyze
 
 Send the prospect this one-liner (they run it; you never see their kubeconfig):
 
@@ -538,6 +610,8 @@ They send you the `.tgz`. You analyze it:
 ## Part 7 — Nightly Run Pipeline (WS-C Evidence)
 
 > This section is for demos after Gate G3 (week 8 onward).
+>
+> The watcher (Part 5) handles real-time alerting. The nightly CronJob pipeline here is the **compliance evidence layer** — it produces immutable JSONL run logs, a rolling `SUMMARY.md`, and the `cha diagnose --format jsonl` output that WS-C requires. Both layers run concurrently; they serve different audiences.
 
 ```bash
 # View the accumulating run history
@@ -576,7 +650,9 @@ After the demo, hand the prospect three things:
 
 3. **The `runs/SUMMARY.md` link** — live evidence that this runs daily in production.
 
-The ask: "Let us deploy the Helm chart to one non-prod namespace, let the CronJob run for two weeks, and compare the results to what your team found manually in the same period."
+The ask: "Let us deploy the Helm chart to one non-prod namespace with the watcher enabled. The watcher gives you immediate, event-driven alerts within seconds — no configuration beyond a Slack webhook. The CronJob runs in parallel to accumulate daily audit evidence. Two weeks of data, zero operator time, and we compare the results to what your team found manually in the same period."
+
+**CronJob vs. Watcher in one sentence**: the CronJob is your compliance ledger; the watcher is your on-call colleague that never sleeps.
 
 ---
 
