@@ -1,6 +1,6 @@
 # Cluster Health Autopilot — Run Summary
 
-_Auto-generated 2026-05-08 19:40 UTC · 4 run(s) · 2026-05-04 → 2026-05-07_
+_Auto-generated 2026-05-08 19:41 UTC · 5 run(s) · 2026-05-04 → 2026-05-08_
 
 ## Health trend
 
@@ -10,16 +10,17 @@ _Auto-generated 2026-05-08 19:40 UTC · 4 run(s) · 2026-05-04 → 2026-05-07_
 | 2026-05-05 | run-2026-05-05 | 5 | 5 | 0 | 0 | 0 | 7 |
 | 2026-05-06 | run-2026-05-06 | 5 | 5 | 0 | 0 | 0 | 7 |
 | 2026-05-07 | run-2026-05-07 | 5 | 5 | 0 | 0 | 0 | 7 |
+| 2026-05-08 | run-2026-05-08 | 5 | 5 | 0 | 0 | 0 | 7 |
 
 ## Diagnostic patterns (top categories, anonymized)
 
 | Category | Occurrences |
 |---|---|
-| `missing-secret` | 8 |
-| `unprovisioned` | 8 |
-| `ExternalSecret` | 4 |
-| `cert-expiry` | 4 |
-| `missing-key` | 4 |
+| `missing-secret` | 10 |
+| `unprovisioned` | 10 |
+| `ExternalSecret` | 5 |
+| `cert-expiry` | 5 |
+| `missing-key` | 5 |
 
 ---
 _All namespace, workload, and secret names are anonymized using deterministic SHA-256 hashing._
