@@ -49,8 +49,9 @@ type Report struct {
 	LastDate    string
 	RunCount    int
 	Runs        []Stats
-	TopDiags    []CategoryFreq // top diagnostic subject prefixes by frequency
-	TopFindings []CategoryFreq // top finding severity+component pairs by frequency
+	Records     []anonymize.RunRecord  // full per-run data for day-by-day detail rendering
+	TopDiags    []CategoryFreq         // top diagnostic subject prefixes by frequency
+	TopFindings []CategoryFreq         // top finding severity+component pairs by frequency
 }
 
 // FromDir reads all *.jsonl files in dir, parses each line as a RunRecord,
@@ -93,6 +94,7 @@ func FromDir(dir string) (*Report, error) {
 				DiagnosticCount: rec.Summary.DiagnosticCount,
 			}
 			r.Runs = append(r.Runs, s)
+			r.Records = append(r.Records, rec)
 
 			if r.FirstDate == "" || s.Date < r.FirstDate {
 				r.FirstDate = s.Date
@@ -166,6 +168,57 @@ func (r *Report) Render(w io.Writer) {
 		ew.printf("\n")
 	}
 
+	// ── Day-by-day details (collapsible) ────────────────────────────────────
+	ew.printf("## Day-by-day details\n\n")
+	for _, rec := range r.Records {
+		date := dateFromTimestamp(rec.Timestamp)
+		ew.printf("<details>\n<summary><strong>%s</strong> — %d component(s) · %d diagnostic(s)</summary>\n\n",
+			date, rec.Summary.TotalComponents, len(rec.Diagnostics))
+
+		ew.printf("### Probes\n\n")
+		ew.printf("| Component | Status | Detail |\n")
+		ew.printf("|---|---|---|\n")
+		for _, res := range rec.Results {
+			c := res.Component
+			ew.printf("| %s | %s | %s |\n",
+				escapeCell(c.Component), escapeCell(c.Status), escapeCell(c.Detail))
+		}
+		ew.printf("\n")
+
+		hasFindings := false
+		for _, res := range rec.Results {
+			if len(res.Findings) > 0 {
+				hasFindings = true
+				break
+			}
+		}
+		if hasFindings {
+			ew.printf("### Findings\n\n")
+			ew.printf("| Component | Severity | Message |\n")
+			ew.printf("|---|---|---|\n")
+			for _, res := range rec.Results {
+				for _, f := range res.Findings {
+					ew.printf("| %s | %s | %s |\n",
+						escapeCell(f.Component), escapeCell(f.Severity), escapeCell(f.Message))
+				}
+			}
+			ew.printf("\n")
+		}
+
+		if len(rec.Diagnostics) > 0 {
+			ew.printf("### Diagnostics\n\n")
+			ew.printf("| # | Category | Message |\n")
+			ew.printf("|---|---|---|\n")
+			for i, d := range rec.Diagnostics {
+				ew.printf("| %d | `%s` | %s |\n",
+					i+1, subjectCategory(d.Subject), escapeCell(d.Message))
+			}
+			ew.printf("\n")
+		}
+
+		ew.printf("</details>\n\n")
+	}
+
 	ew.printf("---\n")
 	ew.printf("_All namespace, workload, and secret names are anonymized using deterministic SHA-256 hashing._\n")
 	ew.printf("_cha version(s) in this dataset: %s_\n", versionList(r.Runs))
@@ -188,6 +241,10 @@ func (e *errWriter) printf(format string, args ...any) {
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+
+func escapeCell(s string) string {
+	return strings.ReplaceAll(s, "|", `\|`)
+}
 
 func readJSONL(path string) ([]anonymize.RunRecord, error) {
 	fh, err := os.Open(path)
