@@ -146,6 +146,16 @@ func TestRender_ContainsExpectedSections(t *testing.T) {
 		"missing-vault-path",
 		"## Component findings",
 		"anonymized",
+		// day-by-day detail section
+		"## Day-by-day details",
+		"<details>",
+		"<summary>",
+		"### Probes",
+		"Ceph Storage",
+		"DEGRADED",
+		"### Findings",
+		"low disk",
+		"### Diagnostics",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("rendered SUMMARY.md missing %q", want)
@@ -159,6 +169,68 @@ func TestRender_EmptyRunsMessage(t *testing.T) {
 	r.Render(&sb)
 	if !strings.Contains(sb.String(), "No runs") {
 		t.Errorf("empty report should say 'No runs', got: %s", sb.String())
+	}
+}
+
+func TestRender_DayByDayDetails(t *testing.T) {
+	dir := t.TempDir()
+	writeJSONL(t, dir, "2026-05-02.jsonl", []anonymize.RunRecord{
+		{
+			SchemaVersion: "1",
+			RunID:         "run-2026-05-02",
+			Timestamp:     "2026-05-02T02:00:00Z",
+			ChaVersion:    "0.9.0",
+			Summary:       anonymize.RunSummary{TotalComponents: 2, HealthyCount: 2, DiagnosticCount: 1},
+			Results: []anonymize.AnonResult{
+				{Component: anonymize.AnonComponentResult{Component: "Cluster Nodes", Status: "HEALTHY", Detail: "All 3 nodes ready"}},
+				{Component: anonymize.AnonComponentResult{Component: "Storage Claims", Status: "HEALTHY", Detail: "12 PVCs bound"}},
+			},
+			Diagnostics: []anonymize.AnonDiagnostic{
+				{Subject: "unprovisioned/ns/secret", Message: "Secret has no ESO | see Vault path"},
+			},
+		},
+	})
+	r, err := FromDir(dir)
+	if err != nil {
+		t.Fatalf("FromDir: %v", err)
+	}
+	var sb strings.Builder
+	r.Render(&sb)
+	md := sb.String()
+
+	for _, want := range []string{
+		"<details>",
+		"<summary><strong>2026-05-02</strong>",
+		"2 component(s) · 1 diagnostic(s)",
+		"### Probes",
+		"Cluster Nodes",
+		"All 3 nodes ready",
+		"### Diagnostics",
+		"`unprovisioned`",
+		// pipe in message must be escaped
+		`\|`,
+		"</details>",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("day-by-day details missing %q", want)
+		}
+	}
+	// findings section absent when no findings
+	if strings.Contains(md, "### Findings") {
+		t.Error("should not render ### Findings when there are none")
+	}
+}
+
+func TestEscapeCell(t *testing.T) {
+	cases := [][2]string{
+		{"no pipes", "no pipes"},
+		{"a|b|c", `a\|b\|c`},
+		{"Vault path `secret/t6-apps/ns/config`", "Vault path `secret/t6-apps/ns/config`"},
+	}
+	for _, c := range cases {
+		if got := escapeCell(c[0]); got != c[1] {
+			t.Errorf("escapeCell(%q) = %q, want %q", c[0], got, c[1])
+		}
 	}
 }
 
