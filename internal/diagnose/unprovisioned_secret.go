@@ -29,6 +29,7 @@ import (
 // ExternalSecret is reported regardless of whether the Secret exists on-cluster.
 type UnprovisionedSecret struct{}
 
+// Name returns the analyzer's identifier.
 func (UnprovisionedSecret) Name() string { return "UnprovisionedSecret" }
 
 // Run produces diagnostics for workload → Secret references that have no
