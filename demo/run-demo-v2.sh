@@ -246,6 +246,9 @@ cat <<'EOF'
 
 EOF
 
+$KUBECTL get namespace "${NAMESPACE}" &>/dev/null || \
+  $KUBECTL create namespace "${NAMESPACE}"
+
 section "Injecting 2 stale Failed pods"
 KUBE_CONTEXT="${KUBE_CONTEXT:-}" bash "${DEMO_DIR}/simulate/01-stale-error-pods.sh" "${NAMESPACE}"
 
