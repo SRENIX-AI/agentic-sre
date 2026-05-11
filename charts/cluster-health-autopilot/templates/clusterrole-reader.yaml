@@ -48,6 +48,11 @@ rules:
   - apiGroups: ["acme.cert-manager.io"]
     resources: ["orders", "challenges"]
     verbs: ["get", "list", "watch"]
+  # IngressCoverage analyzer — reads all Ingress rules cluster-wide to detect
+  # hostnames that have no endpoint probe. Read-only; no write verbs needed.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
   # Database-operator probe (CloudNativePG).
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]
