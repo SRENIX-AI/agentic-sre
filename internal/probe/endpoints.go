@@ -85,11 +85,10 @@ func (e Endpoints) Run(ctx context.Context, src snapshot.Source) Result {
 		}
 	}
 
-	switch {
-	case issues == 0:
+	if issues == 0 {
 		r.Component.Status = "HEALTHY"
 		r.Component.Detail = fmt.Sprintf("All %d endpoints reachable", healthy)
-	default:
+	} else {
 		r.Component.Status = "CRITICAL"
 		r.Component.Detail = fmt.Sprintf("%d/%d endpoints failing", issues, len(e.Targets))
 	}
@@ -125,7 +124,7 @@ func checkEndpoint(ctx context.Context, client *http.Client, t EndpointTarget) (
 			Remediation: "Check DNS, Kong ingress route, and pod readiness for this host",
 		}, false
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if t.ExpectStatus != 0 && resp.StatusCode != t.ExpectStatus {
 		return Finding{
