@@ -1,4 +1,4 @@
-{{- if .Values.approval.enabled }}
+{{- if ((.Values.approval).enabled) }}
 # approval-server-rbac.yaml
 #
 # The approval-server SA needs:

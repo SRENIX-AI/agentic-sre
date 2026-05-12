@@ -1,4 +1,4 @@
-{{- if .Values.approval.enabled }}
+{{- if ((.Values.approval).enabled) }}
 # approval-server-keygen-job.yaml
 #
 # Generates the Ed25519 signing keypair the approval-server uses to

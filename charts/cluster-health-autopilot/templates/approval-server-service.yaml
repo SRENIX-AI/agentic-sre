@@ -1,4 +1,4 @@
-{{- if .Values.approval.enabled }}
+{{- if ((.Values.approval).enabled) }}
 apiVersion: v1
 kind: Service
 metadata:
