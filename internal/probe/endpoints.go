@@ -170,6 +170,9 @@ func DefaultEndpointTargets() []EndpointTarget {
 		{URL: "https://langfuse.bionicaisolutions.com", Name: "Langfuse Observability"},
 		{URL: "https://platform.baisoln.com", Name: "Bionic Platform"},
 		{URL: "https://mail.bionicaisolutions.com", Name: "Mail Service"},
+		{URL: "https://livekit.bionicaisolutions.com", Name: "LiveKit Realtime"},
+		{URL: "https://pg.bionicaisolutions.com", Name: "pgAdmin"},
+		{URL: "https://letta.bionicaisolutions.com", Name: "Letta Server"},
 	}
 }
 
