@@ -1,4 +1,4 @@
-{{- if and .Values.approval.enabled .Values.gatekeeper.install }}
+{{- if and ((.Values.approval).enabled) ((.Values.gatekeeper).install) }}
 # gatekeeper-constraint.yaml
 #
 # Defense-in-depth admission policy. Even after a signed approval token
