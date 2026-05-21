@@ -1,6 +1,6 @@
 # Cluster Health Autopilot — Run Summary
 
-_Auto-generated 2026-05-20 06:06 UTC · 16 run(s) · 2026-05-04 → 2026-05-19_
+_Auto-generated 2026-05-21 06:09 UTC · 17 run(s) · 2026-05-04 → 2026-05-20_
 
 ## Health trend
 
@@ -22,6 +22,7 @@ _Auto-generated 2026-05-20 06:06 UTC · 16 run(s) · 2026-05-04 → 2026-05-19_
 | 2026-05-17 | run-2026-05-17 | 6 | 6 | 0 | 0 | 0 | 0 |
 | 2026-05-18 | run-2026-05-18 | 6 | 6 | 0 | 0 | 0 | 0 |
 | 2026-05-19 | run-2026-05-19 | 6 | 6 | 0 | 0 | 0 | 0 |
+| 2026-05-20 | run-2026-05-20 | 6 | 6 | 0 | 0 | 0 | 0 |
 
 ## Diagnostic patterns (top categories, anonymized)
 
@@ -366,6 +367,22 @@ _Auto-generated 2026-05-20 06:06 UTC · 16 run(s) · 2026-05-04 → 2026-05-19_
 
 <details>
 <summary><strong>2026-05-19</strong> — 6 component(s) · 0 diagnostic(s)</summary>
+
+### Probes
+
+| Component | Status | Detail |
+|---|---|---|
+| Ceph Storage | HEALTHY | 1 cluster(s): rook-ceph@rook-ceph OK (12.1% used) |
+| Cluster Nodes | HEALTHY | All 6 nodes ready |
+| PostgreSQL | HEALTHY | 1 CNPG cluster(s): pg-ceph@pg (2/2 ready, primary=pg-ceph-5) |
+| Storage Claims | HEALTHY | All 75 PVCs bound |
+| Critical Services | HEALTHY | All 32 critical services operational |
+| component-a733dc9e | HEALTHY | All 28 endpoints reachable (20 auto-discovered) |
+
+</details>
+
+<details>
+<summary><strong>2026-05-20</strong> — 6 component(s) · 0 diagnostic(s)</summary>
 
 ### Probes
 
