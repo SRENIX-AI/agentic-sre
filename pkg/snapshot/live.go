@@ -86,6 +86,17 @@ func (l *LiveSource) Patch(ctx context.Context, gvr schema.GroupVersionResource,
 	return err
 }
 
+// PatchStatus satisfies Mutator. Hits the /status subresource so CRDs that
+// declare `subresources.status: {}` actually accept the patch.
+func (l *LiveSource) PatchStatus(ctx context.Context, gvr schema.GroupVersionResource, ns, name string, patchType apitypes.PatchType, patch []byte) error {
+	if ns == "" {
+		_, err := l.client.Resource(gvr).Patch(ctx, name, patchType, patch, v1.PatchOptions{}, "status")
+		return err
+	}
+	_, err := l.client.Resource(gvr).Namespace(ns).Patch(ctx, name, patchType, patch, v1.PatchOptions{}, "status")
+	return err
+}
+
 // Create satisfies Mutator. Restricted to writers (not fixers — fixers
 // should call Delete/Patch only).
 func (l *LiveSource) Create(ctx context.Context, gvr schema.GroupVersionResource, ns string, obj *unstructured.Unstructured) error {
