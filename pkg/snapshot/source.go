@@ -52,6 +52,12 @@ type Mutator interface {
 	// Patch applies a strategic-merge, JSON-merge, or JSON patch.
 	Patch(ctx context.Context, gvr schema.GroupVersionResource, ns, name string, patchType types.PatchType, patch []byte) error
 
+	// PatchStatus applies a patch to the resource's /status subresource.
+	// Required for CRDs that declare subresources.status: {} — patches sent
+	// to the main resource endpoint silently drop status field changes.
+	// Used by pkg/ticketing to persist TicketRef on DriftReport.status.ticket.
+	PatchStatus(ctx context.Context, gvr schema.GroupVersionResource, ns, name string, patchType types.PatchType, patch []byte) error
+
 	// Create writes a new resource. Scoped to the report writer; fixers must
 	// not create resources — only Delete and Patch are permitted to fixers.
 	Create(ctx context.Context, gvr schema.GroupVersionResource, ns string, obj *unstructured.Unstructured) error
