@@ -32,6 +32,10 @@ func (f *fakeMutator) Patch(_ context.Context, gvr schema.GroupVersionResource, 
 	f.calls = append(f.calls, fmt.Sprintf("Patch %s/%s/%s", gvr.Resource, ns, name))
 	return nil
 }
+func (f *fakeMutator) PatchStatus(_ context.Context, gvr schema.GroupVersionResource, ns, name string, _ types.PatchType, _ []byte) error {
+	f.calls = append(f.calls, fmt.Sprintf("PatchStatus %s/%s/%s", gvr.Resource, ns, name))
+	return nil
+}
 func (f *fakeMutator) Create(_ context.Context, gvr schema.GroupVersionResource, ns string, obj *unstructured.Unstructured) error {
 	f.calls = append(f.calls, fmt.Sprintf("Create %s/%s/%s", gvr.Resource, ns, obj.GetName()))
 	return nil

@@ -44,10 +44,15 @@ type patchCall struct {
 	name  string
 	body  []byte
 	pType types.PatchType
+	sub   string // "" for main resource, "status" for /status subresource
 }
 
 func (m *tixMutator) Patch(_ context.Context, gvr schema.GroupVersionResource, _ string, name string, p types.PatchType, body []byte) error {
-	m.patches = append(m.patches, patchCall{gvr: gvr, name: name, body: body, pType: p})
+	m.patches = append(m.patches, patchCall{gvr: gvr, name: name, body: body, pType: p, sub: ""})
+	return nil
+}
+func (m *tixMutator) PatchStatus(_ context.Context, gvr schema.GroupVersionResource, _ string, name string, p types.PatchType, body []byte) error {
+	m.patches = append(m.patches, patchCall{gvr: gvr, name: name, body: body, pType: p, sub: "status"})
 	return nil
 }
 func (m *tixMutator) Delete(_ context.Context, _ schema.GroupVersionResource, _, _ string) error {
@@ -195,6 +200,9 @@ func TestRouteTicketsUpsertsForUnfixableWithoutExistingRef(t *testing.T) {
 	}
 	if mut.patches[0].name != "drift-broken" {
 		t.Errorf("patch target=%q want drift-broken", mut.patches[0].name)
+	}
+	if mut.patches[0].sub != "status" {
+		t.Errorf("patch must target /status subresource (CRD declares subresources.status:{}), got sub=%q", mut.patches[0].sub)
 	}
 	// Patch body should contain provider+key.
 	var body map[string]any

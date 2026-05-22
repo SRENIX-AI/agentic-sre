@@ -42,6 +42,12 @@ func (f *fakeMutator) Patch(_ context.Context, gvr schema.GroupVersionResource, 
 	return f.returnErr[key]
 }
 
+func (f *fakeMutator) PatchStatus(_ context.Context, gvr schema.GroupVersionResource, ns, name string, patchType types.PatchType, _ []byte) error {
+	key := fmt.Sprintf("PatchStatus %s/%s/%s [%s]", gvr.Resource, ns, name, string(patchType))
+	f.calls = append(f.calls, key)
+	return f.returnErr[key]
+}
+
 func (f *fakeMutator) Create(_ context.Context, gvr schema.GroupVersionResource, ns string, obj *unstructured.Unstructured) error {
 	key := fmt.Sprintf("Create %s/%s/%s", gvr.Resource, ns, obj.GetName())
 	f.calls = append(f.calls, key)

@@ -61,29 +61,31 @@ func RouteTickets(
 	runID string,
 ) {
 	if cfg.Sink == nil || mut == nil {
+		log.Printf("ticketing: cycle skipped (sink=%v mut=%v)", cfg.Sink != nil, mut != nil)
 		return
 	}
+	log.Printf("ticketing: cycle start (toPost=%d postFix=%d cluster=%q)", len(toPost), len(postFixSubjects), cfg.Cluster)
 
 	bySubject, err := indexDriftReportsBySubject(ctx, src)
 	if err != nil {
 		log.Printf("ticketing: list driftreports: %v", err)
 		return
 	}
+	log.Printf("ticketing: indexed %d existing driftreports", len(bySubject))
 
+	created := 0
 	for _, d := range toPost {
 		if !postFixSubjects[d.Subject] {
-			continue // fixed this cycle — nothing to ticket
+			log.Printf("ticketing: skip %s (fixed this cycle)", d.Subject)
+			continue
 		}
 		cr, ok := bySubject[d.Subject]
 		if !ok {
-			// DriftReport CRD disabled or CR not yet visible. CHA still
-			// runs Reconcile before us; this only happens when WriteDriftReports
-			// is false. In that mode, ticketing is also a no-op.
+			log.Printf("ticketing: skip %s (no driftreport CR — WriteDriftReports off?)", d.Subject)
 			continue
 		}
 		if existing, ok := readTicketRef(cr); ok {
-			// M2 will compare severity/message and post a comment; M1 skips.
-			_ = existing
+			log.Printf("ticketing: skip %s (already ticketed: %s/%s)", d.Subject, existing.Provider, existing.Key)
 			continue
 		}
 
@@ -93,10 +95,14 @@ func RouteTickets(
 			log.Printf("ticketing: upsert %s: %v", d.Subject, err)
 			continue
 		}
+		log.Printf("ticketing: upserted %s -> %s/%s", d.Subject, ref.Provider, ref.Key)
 		if err := writeTicketRef(ctx, mut, cr.GetName(), ref); err != nil {
 			log.Printf("ticketing: persist ref %s on %s: %v", ref.Key, cr.GetName(), err)
+			continue
 		}
+		created++
 	}
+	log.Printf("ticketing: cycle end (created=%d)", created)
 }
 
 // ticketFromDelta builds a ticketing.Ticket from a routing DeltaDiag.
@@ -181,5 +187,5 @@ func writeTicketRef(ctx context.Context, mut snapshot.Mutator, crName string, re
 	if err != nil {
 		return err
 	}
-	return mut.Patch(ctx, snapshot.GVRDriftReport, "", crName, types.MergePatchType, patch)
+	return mut.PatchStatus(ctx, snapshot.GVRDriftReport, "", crName, types.MergePatchType, patch)
 }

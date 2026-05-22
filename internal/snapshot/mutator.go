@@ -40,6 +40,11 @@ func (DryRunMutator) Patch(_ context.Context, _ schema.GroupVersionResource, _, 
 	return nil
 }
 
+// PatchStatus is a no-op in dry-run mode.
+func (DryRunMutator) PatchStatus(_ context.Context, _ schema.GroupVersionResource, _, _ string, _ types.PatchType, _ []byte) error {
+	return nil
+}
+
 // Create is a no-op in dry-run mode.
 func (DryRunMutator) Create(_ context.Context, _ schema.GroupVersionResource, _ string, _ *unstructured.Unstructured) error {
 	return nil
@@ -65,6 +70,20 @@ func (l *Live) Patch(ctx context.Context, gvr schema.GroupVersionResource, ns, n
 		ri = l.client.Resource(gvr).Namespace(ns)
 	}
 	_, err := ri.Patch(ctx, name, patchType, patch, v1.PatchOptions{})
+	return err
+}
+
+// PatchStatus applies the patch to the /status subresource. Required for
+// CRDs that declare `subresources.status: {}` — patches to the main
+// resource endpoint silently drop status field changes.
+func (l *Live) PatchStatus(ctx context.Context, gvr schema.GroupVersionResource, ns, name string, patchType types.PatchType, patch []byte) error {
+	var ri dynamic.ResourceInterface
+	if ns == "" {
+		ri = l.client.Resource(gvr)
+	} else {
+		ri = l.client.Resource(gvr).Namespace(ns)
+	}
+	_, err := ri.Patch(ctx, name, patchType, patch, v1.PatchOptions{}, "status")
 	return err
 }
 
