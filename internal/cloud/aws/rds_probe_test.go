@@ -9,42 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
-	pkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
-	pkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
 )
 
-// fakeAWS implements pkgaws.Client for unit tests. Tests inject the
-// instance list (and optional error) directly.
-type fakeAWS struct {
-	region    string
-	instances []pkgaws.DBInstance
-	err       error
-}
-
-func (f *fakeAWS) Region() string { return f.region }
-func (f *fakeAWS) DescribeDBInstances(_ context.Context) ([]pkgaws.DBInstance, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.instances, nil
-}
-
-// fakeSource implements cloud.Source for unit tests. AWS is settable;
-// other providers default to nil (matches the cloud.aws-only test case).
-type fakeSource struct {
-	aws   pkgaws.Client
-	gcp   pkggcp.Client
-	azure pkgazure.Client
-	mode  cloud.Mode
-}
-
-func (f *fakeSource) AWS() pkgaws.Client     { return f.aws }
-func (f *fakeSource) GCP() pkggcp.Client     { return f.gcp }
-func (f *fakeSource) Azure() pkgazure.Client { return f.azure }
-func (f *fakeSource) Mode() cloud.Mode       { return f.mode }
+// (fakeAWS / fakeSource live in fake_test.go — shared across all probe tests.)
 
 func TestRDS_Name(t *testing.T) {
 	if got := (RDS{}).Name(); got != "aws-rds" {
@@ -64,7 +33,7 @@ func TestRDS_SkippedWhenAWSNotConfigured(t *testing.T) {
 }
 
 func TestRDS_ProbeFailedOnAPIError(t *testing.T) {
-	src := &fakeSource{aws: &fakeAWS{region: "us-east-1", err: errors.New("boom")}}
+	src := &fakeSource{aws: &fakeAWS{region: "us-east-1", instancesErr: errors.New("boom")}}
 	r := (RDS{}).Run(context.Background(), src)
 	if r.Component.Status != "PROBE_FAILED" {
 		t.Errorf("Status=%q want PROBE_FAILED on API error", r.Component.Status)

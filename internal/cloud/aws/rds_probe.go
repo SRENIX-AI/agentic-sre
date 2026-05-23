@@ -40,6 +40,8 @@ const (
 // DriftReport / Alertmanager as the component label.
 func (RDS) Name() string { return rdsName }
 
+// Run satisfies cloudprobe.Probe.
+//
 // Run inspects all RDS DBInstances visible to the bound AWS sub-client.
 // Returns SKIPPED when the source has no AWS configured.
 func (RDS) Run(ctx context.Context, src cloud.Source) probe.Result {

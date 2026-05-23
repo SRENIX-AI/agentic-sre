@@ -22,19 +22,17 @@ import (
 // GCP and Azure in M2.
 func RegisterCloudOSS(reg *registry.Registry, awsEnabled, gcpEnabled, azureEnabled bool) {
 	if awsEnabled {
-		reg.RegisterCloudProbe(awsprobes.RDS{})
-		// M1 follow-up: EBSVolumes{}, EKSControlPlane{}, EKSNodeGroups{},
-		// IAMRoles{}, ALBTargetHealth{}, ACMCertExpiry{}, KMSKeys{},
-		// S3BucketPublicAccess{}, VPCSubnetCapacity{}
-	}
-	if gcpEnabled {
-		// M2: CloudSQL, PersistentDisks, GKE control plane + node pools,
-		// IAM service accounts, LB backends, managed certs, GCS public
-		// access, KMS keys, subnet capacity
-	}
-	if azureEnabled {
-		// M2: Azure SQL, ManagedDisks, AKS control plane + node pools,
-		// ManagedIdentities, AppGatewayBackends, certs, storage public
-		// access, KeyVault, VNet subnets
+		reg.RegisterCloudProbe(
+			awsprobes.RDS{},
+			awsprobes.EBSVolumes{},
+			awsprobes.EKSControlPlane{},
+			awsprobes.EKSNodeGroups{},
+			awsprobes.IAMRoles{},
+			awsprobes.ALBTargetHealth{},
+			awsprobes.ACMCertExpiry{},
+			awsprobes.KMSKeys{},
+			awsprobes.S3BucketPublicAccess{},
+			awsprobes.VPCSubnets{},
+		)
 	}
 }

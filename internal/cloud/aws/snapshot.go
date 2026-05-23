@@ -44,10 +44,91 @@ func NewSnapshotClient(snapshotDir, region string) *SnapshotClient {
 // Region returns the region recorded at capture time.
 func (c *SnapshotClient) Region() string { return c.region }
 
-// DescribeDBInstances reads rds.json from the snapshot dir. Missing
-// file → (nil, nil). Malformed file → (nil, err).
+// Per-resource readers. Each is a one-liner over the generic readJSON
+// helper. Snapshot file convention: <snapshot-dir>/cloud/aws/<name>.json
+// where <name> matches the resource (rds, ebs, eks, eks-nodegroups,
+// alb, acm, kms, s3-pab, vpc-subnets). IAM is special: per-role lookup
+// keyed by ARN under iam-roles.json.
+
+// DescribeDBInstances satisfies pkg/cloud/aws.Client.
 func (c *SnapshotClient) DescribeDBInstances(_ context.Context) ([]pkgaws.DBInstance, error) {
 	return readJSON[pkgaws.DBInstance](c.dir, "rds.json")
+}
+
+// DescribeVolumes satisfies pkg/cloud/aws.Client.
+func (c *SnapshotClient) DescribeVolumes(_ context.Context) ([]pkgaws.Volume, error) {
+	return readJSON[pkgaws.Volume](c.dir, "ebs.json")
+}
+
+// DescribeEKSCluster returns the cluster matching name from
+// eks-clusters.json, or (nil, nil) when not present.
+func (c *SnapshotClient) DescribeEKSCluster(_ context.Context, name string) (*pkgaws.EKSCluster, error) {
+	clusters, err := readJSON[pkgaws.EKSCluster](c.dir, "eks-clusters.json")
+	if err != nil {
+		return nil, err
+	}
+	for i := range clusters {
+		if clusters[i].Name == name {
+			return &clusters[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// ListEKSNodeGroups returns node groups for the named cluster from
+// eks-nodegroups.json.
+func (c *SnapshotClient) ListEKSNodeGroups(_ context.Context, clusterName string) ([]pkgaws.EKSNodeGroup, error) {
+	all, err := readJSON[pkgaws.EKSNodeGroup](c.dir, "eks-nodegroups.json")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]pkgaws.EKSNodeGroup, 0, len(all))
+	for _, ng := range all {
+		if ng.ClusterName == clusterName {
+			out = append(out, ng)
+		}
+	}
+	return out, nil
+}
+
+// GetIAMRole looks up a role from iam-roles.json by ARN match. Missing
+// role yields (&IAMRole{Exists:false, ARN: arnOrName}, nil).
+func (c *SnapshotClient) GetIAMRole(_ context.Context, arnOrName string) (*pkgaws.IAMRole, error) {
+	roles, err := readJSON[pkgaws.IAMRole](c.dir, "iam-roles.json")
+	if err != nil {
+		return nil, err
+	}
+	for i := range roles {
+		if roles[i].ARN == arnOrName || roles[i].Name == arnOrName {
+			return &roles[i], nil
+		}
+	}
+	return &pkgaws.IAMRole{ARN: arnOrName, Exists: false}, nil
+}
+
+// DescribeALBTargetGroupsWithHealth satisfies pkg/cloud/aws.Client.
+func (c *SnapshotClient) DescribeALBTargetGroupsWithHealth(_ context.Context) ([]pkgaws.ALBTargetGroup, error) {
+	return readJSON[pkgaws.ALBTargetGroup](c.dir, "alb.json")
+}
+
+// ListACMCertificates satisfies pkg/cloud/aws.Client.
+func (c *SnapshotClient) ListACMCertificates(_ context.Context) ([]pkgaws.ACMCertificate, error) {
+	return readJSON[pkgaws.ACMCertificate](c.dir, "acm.json")
+}
+
+// ListKMSKeys satisfies pkg/cloud/aws.Client.
+func (c *SnapshotClient) ListKMSKeys(_ context.Context) ([]pkgaws.KMSKey, error) {
+	return readJSON[pkgaws.KMSKey](c.dir, "kms.json")
+}
+
+// ListS3BucketPAB satisfies pkg/cloud/aws.Client.
+func (c *SnapshotClient) ListS3BucketPAB(_ context.Context) ([]pkgaws.S3BucketPAB, error) {
+	return readJSON[pkgaws.S3BucketPAB](c.dir, "s3-pab.json")
+}
+
+// DescribeSubnets satisfies pkg/cloud/aws.Client.
+func (c *SnapshotClient) DescribeSubnets(_ context.Context) ([]pkgaws.VPCSubnet, error) {
+	return readJSON[pkgaws.VPCSubnet](c.dir, "vpc-subnets.json")
 }
 
 // readJSON is a small generic helper so additional Describe* methods

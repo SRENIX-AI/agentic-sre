@@ -12,53 +12,124 @@ import "time"
 // JSON tags are the snapshot-file wire format. Changing a tag is a
 // snapshot-file backward-compat break; add new fields with new tags
 // instead.
-//
-// Fields cover only what the M1 RDS probe asserts on. Extend
-// deliberately as analyzers / fixers ask for more.
 type DBInstance struct {
-	// Identifier is the DB instance identifier (e.g. "prod-db-1").
-	// Used in the DriftReport subject.
-	Identifier string `json:"identifier"`
+	Identifier         string    `json:"identifier"`
+	Engine             string    `json:"engine"`
+	Status             string    `json:"status"`
+	AllocatedStorageGB int32     `json:"allocatedStorageGB"`
+	StorageUsedPercent int       `json:"storageUsedPercent"`
+	MultiAZ            bool      `json:"multiAZ,omitempty"`
+	Endpoint           string    `json:"endpoint,omitempty"`
+	ARN                string    `json:"arn,omitempty"`
+	CreatedAt          time.Time `json:"createdAt,omitempty"`
+}
 
-	// Engine is the database engine (e.g. "postgres", "mysql",
-	// "aurora-postgresql"). Surfaced in the diagnostic for context.
-	Engine string `json:"engine"`
+// Volume is the narrow projection of an EBS volume. State values:
+// creating, available, in-use, deleting, deleted, error.
+type Volume struct {
+	VolumeID         string        `json:"volumeId"`
+	State            string        `json:"state"`
+	SizeGB           int32         `json:"sizeGB"`
+	VolumeType       string        `json:"volumeType,omitempty"`
+	AttachedToEC2    string        `json:"attachedToEC2,omitempty"`    // empty when detached
+	DetachedDuration time.Duration `json:"detachedDuration,omitempty"` // computed by Live (now - DetachTime); 0 in Snapshot if not captured
+	CreatedAt        time.Time     `json:"createdAt,omitempty"`
+	ARN              string        `json:"arn,omitempty"`
+}
 
-	// Status is the lifecycle state. Values include: available,
-	// backing-up, creating, deleting, failed, incompatible-network,
-	// incompatible-option-group, incompatible-parameters,
-	// incompatible-restore, modifying, rebooting, renaming,
-	// resetting-master-credentials, restore-error, starting, stopped,
-	// stopping, storage-full, storage-optimization. The probe flags
-	// any status that is not "available".
-	Status string `json:"status"`
-
-	// AllocatedStorageGB is the requested storage size in GB.
-	AllocatedStorageGB int32 `json:"allocatedStorageGB"`
-
-	// StorageUsedPercent is the percentage of allocated storage
-	// currently consumed. SDK reports this via CloudWatch's
-	// FreeStorageSpace metric divided by AllocatedStorageGB; the Live
-	// wrapper computes this from the metric. Snapshot mode captures
-	// the computed percentage directly. 0 means "unknown" — the probe
-	// does not emit storage findings for 0 since the threshold check
-	// is `>= warn`, and 0 < warn always.
-	StorageUsedPercent int `json:"storageUsedPercent"`
-
-	// MultiAZ indicates whether the instance is configured for
-	// Multi-AZ failover. Probe uses this to scope severity of
-	// failover events.
-	MultiAZ bool `json:"multiAZ,omitempty"`
-
-	// Endpoint is the connection endpoint (host:port). Surfaced in
-	// the diagnostic so operators can correlate to client errors.
-	Endpoint string `json:"endpoint,omitempty"`
-
-	// ARN is the full Amazon Resource Name. Stamped into
-	// DriftReport.spec.resourceRef.cloud for unambiguous reference.
-	ARN string `json:"arn,omitempty"`
-
-	// CreatedAt is the instance creation time. Provided for age-aware
-	// analyzers (not used by M1 RDS probe).
+// EKSCluster is the narrow projection of an EKS cluster.
+// Status values: CREATING, ACTIVE, DELETING, FAILED, UPDATING, PENDING.
+type EKSCluster struct {
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	Version   string    `json:"version"`
+	Endpoint  string    `json:"endpoint,omitempty"`
+	ARN       string    `json:"arn,omitempty"`
 	CreatedAt time.Time `json:"createdAt,omitempty"`
+}
+
+// EKSNodeGroup is the narrow projection of an EKS managed node group.
+// Status values: CREATING, ACTIVE, UPDATING, DELETING, CREATE_FAILED,
+// UPDATE_FAILED, DELETE_FAILED, DEGRADED.
+type EKSNodeGroup struct {
+	ClusterName  string   `json:"clusterName"`
+	Name         string   `json:"name"`
+	Status       string   `json:"status"`
+	Version      string   `json:"version,omitempty"`
+	DesiredSize  int32    `json:"desiredSize"`
+	MinSize      int32    `json:"minSize"`
+	MaxSize      int32    `json:"maxSize"`
+	HealthIssues []string `json:"healthIssues,omitempty"` // SDK Health.Issues[*].Code
+	ARN          string   `json:"arn,omitempty"`
+}
+
+// IAMRole is the narrow projection of an IAM role lookup result.
+// Exists==false means GetRole returned NoSuchEntity — caller assumes
+// drift (an IRSA pointer to a non-existent role).
+type IAMRole struct {
+	ARN            string `json:"arn"`
+	Name           string `json:"name,omitempty"`
+	Exists         bool   `json:"exists"`
+	HasTrustPolicy bool   `json:"hasTrustPolicy,omitempty"`
+	ErrorMessage   string `json:"errorMessage,omitempty"`
+}
+
+// ALBTargetGroup combines an ALB/NLB target group with its current
+// target health summary in one record so the probe doesn't have to
+// fan out N+1 calls.
+type ALBTargetGroup struct {
+	ARN            string `json:"arn"`
+	Name           string `json:"name"`
+	Protocol       string `json:"protocol,omitempty"`
+	Port           int32  `json:"port,omitempty"`
+	TargetType     string `json:"targetType,omitempty"`
+	HealthyCount   int    `json:"healthyCount"`
+	UnhealthyCount int    `json:"unhealthyCount"`
+	UnusedCount    int    `json:"unusedCount,omitempty"`
+	InitialCount   int    `json:"initialCount,omitempty"`
+}
+
+// ACMCertificate is the narrow projection of an ACM cert.
+// Status values: PENDING_VALIDATION, ISSUED, INACTIVE, EXPIRED,
+// VALIDATION_TIMED_OUT, REVOKED, FAILED.
+type ACMCertificate struct {
+	ARN        string    `json:"arn"`
+	DomainName string    `json:"domainName"`
+	Status     string    `json:"status"`
+	NotAfter   time.Time `json:"notAfter,omitempty"`
+	Type       string    `json:"type,omitempty"` // IMPORTED, AMAZON_ISSUED, PRIVATE
+}
+
+// KMSKey is the narrow projection of a KMS Customer Master Key.
+// State values: Creating, Enabled, Disabled, PendingDeletion,
+// PendingImport, Unavailable, PendingReplicaDeletion.
+type KMSKey struct {
+	KeyID        string    `json:"keyId"`
+	ARN          string    `json:"arn"`
+	State        string    `json:"state"`
+	Enabled      bool      `json:"enabled"`
+	DeletionDate time.Time `json:"deletionDate,omitempty"` // set when State=PendingDeletion
+	Description  string    `json:"description,omitempty"`
+}
+
+// S3BucketPAB is the public-access-block configuration for one bucket.
+// Drift signature: bucket has objects/policy expectations of private
+// but PublicAccessBlock is fully or partially disabled.
+type S3BucketPAB struct {
+	Bucket                string `json:"bucket"`
+	BlockPublicAcls       bool   `json:"blockPublicAcls"`
+	IgnorePublicAcls      bool   `json:"ignorePublicAcls"`
+	BlockPublicPolicy     bool   `json:"blockPublicPolicy"`
+	RestrictPublicBuckets bool   `json:"restrictPublicBuckets"`
+	HasPolicyError        bool   `json:"hasPolicyError,omitempty"` // GetPublicAccessBlock returned NoSuchPublicAccessBlockConfiguration
+}
+
+// VPCSubnet is the narrow projection of a VPC subnet, focused on
+// IP-capacity drift (the most common subnet pain).
+type VPCSubnet struct {
+	SubnetID                  string `json:"subnetId"`
+	VPCID                     string `json:"vpcId"`
+	CIDRBlock                 string `json:"cidrBlock,omitempty"`
+	AvailabilityZone          string `json:"availabilityZone,omitempty"`
+	AvailableIPv4AddressCount int32  `json:"availableIPv4AddressCount"`
 }

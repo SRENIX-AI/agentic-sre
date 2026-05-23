@@ -24,9 +24,9 @@ import (
 	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/catalog"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/anonymize"
 	cloudimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
 	awsimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/aws"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/anonymize"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
@@ -440,10 +440,10 @@ func watchCmd() *cobra.Command {
 		ticketingDryRun         bool
 
 		// Cloud probe flags
-		cloudAWSEnabled bool
-		cloudAWSRegion  string
-		cloudGCPEnabled bool
-		cloudGCPProject string
+		cloudAWSEnabled          bool
+		cloudAWSRegion           string
+		cloudGCPEnabled          bool
+		cloudGCPProject          string
 		cloudAzureEnabled        bool
 		cloudAzureSubscriptionID string
 		cloudIncludeCloud        bool
@@ -535,12 +535,12 @@ the post-fix cluster state.`,
 			var cloudSrc cloudpkg.Source
 			if cloudOn {
 				src, cerr := buildCloudSource(cmd.Context(), cloudOpts{
-					AWSEnabled:           cloudAWSEnabled && !cloudExcludeCloud,
-					AWSRegion:            cloudAWSRegion,
-					GCPEnabled:           cloudGCPEnabled && !cloudExcludeCloud,
-					GCPProject:           cloudGCPProject,
-					AzureEnabled:         cloudAzureEnabled && !cloudExcludeCloud,
-					AzureSubscriptionID:  cloudAzureSubscriptionID,
+					AWSEnabled:          cloudAWSEnabled && !cloudExcludeCloud,
+					AWSRegion:           cloudAWSRegion,
+					GCPEnabled:          cloudGCPEnabled && !cloudExcludeCloud,
+					GCPProject:          cloudGCPProject,
+					AzureEnabled:        cloudAzureEnabled && !cloudExcludeCloud,
+					AzureSubscriptionID: cloudAzureSubscriptionID,
 				})
 				if cerr != nil {
 					return cerr
@@ -647,10 +647,10 @@ func buildCloudSource(ctx context.Context, o cloudOpts) (cloudpkg.Source, error)
 		awsClient = c
 	}
 	if o.GCPEnabled {
-		return nil, fmt.Errorf("GCP cloud probes land in M2 (cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
+		return nil, fmt.Errorf("gcp cloud probes land in M2 (cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
 	}
 	if o.AzureEnabled {
-		return nil, fmt.Errorf("Azure cloud probes land in M2 (cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
+		return nil, fmt.Errorf("azure cloud probes land in M2 (cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
 	}
 	if awsClient == nil {
 		return nil, nil
