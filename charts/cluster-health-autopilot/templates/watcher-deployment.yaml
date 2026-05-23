@@ -106,6 +106,21 @@ spec:
             - --ticketing-dry-run
             {{- end }}
             {{- end }}
+            {{- if .Values.cloud.enabled }}
+            - --cloud-cadence={{ .Values.cloud.cadence | default "10m" }}
+            {{- if .Values.cloud.aws.enabled }}
+            - --cloud-aws-enabled
+            - --cloud-aws-region={{ required "cloud.aws.region required when cloud.aws.enabled" .Values.cloud.aws.region }}
+            {{- end }}
+            {{- if .Values.cloud.gcp.enabled }}
+            - --cloud-gcp-enabled
+            - --cloud-gcp-project={{ required "cloud.gcp.project required when cloud.gcp.enabled" .Values.cloud.gcp.project }}
+            {{- end }}
+            {{- if .Values.cloud.azure.enabled }}
+            - --cloud-azure-enabled
+            - --cloud-azure-subscription-id={{ required "cloud.azure.subscriptionId required when cloud.azure.enabled" .Values.cloud.azure.subscriptionId }}
+            {{- end }}
+            {{- end }}
           env:
             {{- include "cha.slackAlertsEnv" . | nindent 12 }}
             {{- include "cha.slackCriticalEnv" . | nindent 12 }}

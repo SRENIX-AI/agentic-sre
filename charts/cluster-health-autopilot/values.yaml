@@ -95,6 +95,63 @@ alertmanager:
   url: ""                        # e.g. "http://alertmanager.pg.svc.cluster.local:9093"
   clusterName: "cluster"         # identifies this cluster in alert labels
 
+# Cloud probe framework — observe AWS / GCP / Azure resources alongside
+# K8s state. Each provider is independently toggleable. Cloud probes do
+# NOT fire on K8s event triggers — they run on `cadence` (default 10m)
+# to protect cloud-API rate limits.
+#
+# Master switch: `cloud.enabled=false` disables EVERYTHING below and
+# pays zero overhead (no SDK init, no probe registration, no extra
+# RBAC). Required for air-gapped deployments where cloud APIs are not
+# reachable.
+#
+# Auth defaults to workload-identity (IRSA on EKS, GCP Workload Identity
+# on GKE, AAD Workload Identity on AKS). The Helm chart auto-annotates
+# the ServiceAccount with the role-arn / GSA / clientID you supply.
+#
+# See cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md
+# for the full design, M1 (AWS) shipped probe list, and M2 (GCP+Azure).
+cloud:
+  enabled: false
+  cadence: 10m                     # min interval between cloud-probe runs
+  rateLimitPerMin: 60              # per-provider; override per-provider below
+  aws:
+    enabled: false
+    region: ""                     # required; e.g. "us-east-1"
+    auth:
+      mode: irsa                   # irsa | assumeRole | staticCredentials
+      roleArn: ""                  # for IRSA: ARN of the IAM role; auto-injected as eks.amazonaws.com/role-arn SA annotation
+      assumeRoleArn: ""            # for assumeRole: target role
+      credentialsSecret: ""        # for staticCredentials: K8s Secret name (ESO-managed)
+    # Per-probe toggles. Each probe is small and independent; turn off
+    # any you don't want without losing the rest. M1 ships RDS only;
+    # the other 9 land in follow-up commits on feat/cloud-probes.
+    probes:
+      rds: true
+      ebs: false                   # M1 follow-up
+      eks: false                   # M1 follow-up
+      iam: false                   # M1 follow-up
+      alb: false                   # M1 follow-up
+      acm: false                   # M1 follow-up
+      kms: false                   # M1 follow-up
+      s3: false                    # M1 follow-up
+      vpc: false                   # M1 follow-up
+  gcp:
+    enabled: false                 # M2 — not shipped yet
+    project: ""
+    auth:
+      mode: workloadIdentity       # workloadIdentity | staticCredentials
+      serviceAccount: ""           # for workloadIdentity: GSA email; auto-injected as iam.gke.io/gcp-service-account SA annotation
+      credentialsSecret: ""        # for staticCredentials: K8s Secret name
+  azure:
+    enabled: false                 # M2 — not shipped yet
+    subscriptionId: ""
+    resourceGroup: ""              # optional scope; empty = subscription-wide
+    auth:
+      mode: workloadIdentity       # workloadIdentity | staticCredentials
+      clientId: ""                 # for workloadIdentity: AAD app client ID; auto-injected as azure.workload.identity/client-id SA annotation
+      credentialsSecret: ""        # for staticCredentials: K8s Secret name
+
 # Ticketing — open issue-tracker tickets for diagnostics CHA cannot
 # auto-remediate. Runs after each watcher cycle's DriftReport reconcile;
 # the resulting ticket key is persisted onto DriftReport.status.ticket

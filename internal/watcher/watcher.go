@@ -35,6 +35,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
 )
 
@@ -87,6 +88,20 @@ type Config struct {
 	// before. Ticketing runs after DriftReport reconcile so the resulting
 	// TicketRef can be persisted onto status.ticket.
 	Ticketing report.TicketingConfig
+
+	// CloudSource is the optional multi-provider cloud-API source
+	// (AWS / GCP / Azure). When nil the cloud-probe path is a complete
+	// no-op and the watcher behaves exactly as before. Set via
+	// `--ticketing-provider` style CLI factory in cmd/cha (look for
+	// buildCloudSource).
+	CloudSource cloud.Source
+
+	// CloudCadence is the minimum interval between cloud-probe runs.
+	// Cloud probes do NOT fire on every K8s event — they only run on
+	// the initial cycle and then no more than once per CloudCadence.
+	// Default 10 minutes when zero. Set via `--cloud-cadence` CLI flag
+	// or `cloud.cadence` Helm value.
+	CloudCadence time.Duration
 
 	// RunRemediation runs fixers after each diagnose cycle and re-diagnoses
 	// post-fix to report accurate state.
@@ -143,6 +158,12 @@ type Watcher struct {
 	mu          sync.Mutex
 	seen        map[string]*seenEntry
 	pendingURLs map[string]pendingURL // ai-tier approval URLs by ActionID
+
+	// lastCloudRun rate-limits cloud-probe iteration. Cloud probes are
+	// expensive (real API calls per provider) and uncorrelated with K8s
+	// events — they run on the initial cycle and then no more often
+	// than cfg.CloudCadence. Zero value means "never run yet → run now".
+	lastCloudRun time.Time
 }
 
 // New returns a configured Watcher. mut may be nil when remediation is disabled.
@@ -273,6 +294,14 @@ func (w *Watcher) runCycle(ctx context.Context) {
 
 	probeResults, diagnostics := w.runDiagnose(ctx)
 
+	// Cloud probes run on their own cadence (not on K8s event triggers)
+	// and are NOT re-run by the post-fix re-diagnose below (K8s fixers
+	// don't mutate cloud state). Captured here once, re-merged after
+	// re-diagnose so findings flow through the same AssembleEntries →
+	// DriftReport → sink pipeline as K8s findings.
+	cloudResults := w.runCloudDiagnose(ctx)
+	probeResults = append(probeResults, cloudResults...)
+
 	// Layer-2 investigation + AI enrichment are applied AFTER the post-fix
 	// re-diagnose below (when remediation is on) — otherwise the post-fix
 	// re-diagnose overwrites the annotated probeResults and the investigation
@@ -299,6 +328,9 @@ func (w *Watcher) runCycle(ctx context.Context) {
 		}
 		// Re-diagnose post-fix so DriftReports reflect actual cluster state.
 		probeResults, diagnostics = w.runDiagnose(ctx)
+		// Re-merge cloud results — fixers don't mutate cloud state so we
+		// preserve the cloud findings captured before fixers ran.
+		probeResults = append(probeResults, cloudResults...)
 	}
 
 	// Investigation must run on the FINAL probeResults — whether that's the
@@ -411,6 +443,52 @@ func (w *Watcher) runDiagnose(ctx context.Context) ([]probe.Result, []diagnose.D
 		diags = append(diags, a.Run(ctx, w.lv)...)
 	}
 	return results, diags
+}
+
+// runCloudDiagnose conditionally runs registered cloud probes. It returns
+// nil (no results) when:
+//   - no cloud source is configured (cfg.CloudSource == nil), OR
+//   - no cloud probes are registered, OR
+//   - the cadence window hasn't elapsed since the last cloud run.
+//
+// Otherwise it iterates all registered cloud probes against the source and
+// returns their results. The returned slice is meant to be appended to the
+// K8s probe results before AssembleEntries so cloud findings flow through
+// the existing DriftReport / Slack / Alertmanager / ticketing path.
+//
+// IMPORTANT: cloud probes only fire on the initial cycle and then no more
+// often than cfg.CloudCadence — they are NOT triggered by K8s events.
+// This protects cloud-API rate limits and avoids "every Pod creation
+// triggers an AWS RDS describe" hot-loops.
+func (w *Watcher) runCloudDiagnose(ctx context.Context) []probe.Result {
+	if w.cfg.CloudSource == nil {
+		return nil
+	}
+	cloudProbes := w.reg.CloudProbes()
+	if len(cloudProbes) == 0 {
+		return nil
+	}
+	cadence := w.cfg.CloudCadence
+	if cadence <= 0 {
+		cadence = 10 * time.Minute
+	}
+	w.mu.Lock()
+	last := w.lastCloudRun
+	w.mu.Unlock()
+	if !last.IsZero() && time.Since(last) < cadence {
+		return nil
+	}
+
+	results := make([]probe.Result, 0, len(cloudProbes))
+	for _, p := range cloudProbes {
+		results = append(results, p.Run(ctx, w.cfg.CloudSource))
+	}
+
+	w.mu.Lock()
+	w.lastCloudRun = time.Now()
+	w.mu.Unlock()
+	log.Printf("watcher: ran %d cloud probe(s)", len(cloudProbes))
+	return results
 }
 
 // buildCurrentState assembles the subject→seenEntry map for the current cycle.
