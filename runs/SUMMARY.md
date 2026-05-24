@@ -1,6 +1,6 @@
 # Cluster Health Autopilot — Run Summary
 
-_Auto-generated 2026-05-23 05:39 UTC · 19 run(s) · 2026-05-04 → 2026-05-22_
+_Auto-generated 2026-05-24 06:01 UTC · 20 run(s) · 2026-05-04 → 2026-05-23_
 
 ## Health trend
 
@@ -25,6 +25,7 @@ _Auto-generated 2026-05-23 05:39 UTC · 19 run(s) · 2026-05-04 → 2026-05-22_
 | 2026-05-20 | run-2026-05-20 | 6 | 6 | 0 | 0 | 0 | 0 |
 | 2026-05-21 | run-2026-05-21 | 6 | 6 | 0 | 0 | 0 | 1 |
 | 2026-05-22 | run-2026-05-22 | 6 | 6 | 0 | 0 | 0 | 0 |
+| 2026-05-23 | run-2026-05-23 | 6 | 6 | 0 | 0 | 0 | 1 |
 
 ## Diagnostic patterns (top categories, anonymized)
 
@@ -32,8 +33,8 @@ _Auto-generated 2026-05-23 05:39 UTC · 19 run(s) · 2026-05-04 → 2026-05-22_
 |---|---|
 | `missing-secret` | 14 |
 | `unprovisioned` | 14 |
+| `cert-expiry` | 8 |
 | `ExternalSecret` | 7 |
-| `cert-expiry` | 7 |
 | `missing-key` | 7 |
 | `image-pull-auth` | 1 |
 
@@ -435,6 +436,28 @@ _Auto-generated 2026-05-23 05:39 UTC · 19 run(s) · 2026-05-04 → 2026-05-22_
 | Storage Claims | HEALTHY | All 75 PVCs bound |
 | Critical Services | HEALTHY | All 32 critical services operational |
 | component-a733dc9e | HEALTHY | All 28 endpoints reachable (20 auto-discovered) |
+
+</details>
+
+<details>
+<summary><strong>2026-05-23</strong> — 6 component(s) · 1 diagnostic(s)</summary>
+
+### Probes
+
+| Component | Status | Detail |
+|---|---|---|
+| Ceph Storage | HEALTHY | 1 cluster(s): rook-ceph@rook-ceph OK (12.1% used) |
+| Cluster Nodes | HEALTHY | All 6 nodes ready |
+| PostgreSQL | HEALTHY | 1 CNPG cluster(s): pg-ceph@pg (2/2 ready, primary=pg-ceph-5) |
+| Storage Claims | HEALTHY | All 75 PVCs bound |
+| Critical Services | HEALTHY | All 32 critical services operational |
+| component-a733dc9e | HEALTHY | All 29 endpoints reachable (21 auto-discovered) |
+
+### Diagnostics
+
+| # | Category | Message |
+|---|---|---|
+| 1 | `cert-expiry` | Certificate `649e263a/8532da75` is not Ready: Secret was issued for "asre-baisoln-com". If this message is not transient, you might have two conflicting Certificates pointing to the same secret.. Check Issuer/ClusterIssuer status and cert-manager controller logs. |
 
 </details>
 
