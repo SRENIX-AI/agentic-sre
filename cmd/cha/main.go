@@ -573,7 +573,23 @@ the post-fix cluster state.`,
 				CloudCadence:      cloudCadence,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
-			return w.Run(ctx)
+			// Sprint 4.3 — wrap Run in leader election. When the env says
+			// off, LeaderConfig.Disabled is set and the body runs straight
+			// through.
+			leaderDisabled := os.Getenv("CHA_LEADER_ELECTION") == "off" ||
+				os.Getenv("CHA_LEADER_ELECTION") == "false" ||
+				os.Getenv("CHA_LEADER_ELECTION") == "0"
+			leaderCfg := watcher.LeaderConfig{Disabled: leaderDisabled}
+			if !leaderDisabled {
+				cs, err := snapshot.BuildKubeClientset(kubeconfig)
+				if err != nil {
+					return fmt.Errorf("leader election: %w", err)
+				}
+				leaderCfg.Clientset = cs
+			}
+			return watcher.RunWithLeader(ctx, leaderCfg, func(leaderCtx context.Context) error {
+				return w.Run(leaderCtx)
+			})
 		},
 	}
 	c.Flags().BoolVar(&live, "live", false, "Run against the live cluster (required)")
@@ -686,9 +702,18 @@ type ticketingOpts struct {
 // Returns an empty config (Sink == nil) when --ticketing-provider is empty —
 // the watcher then no-ops the ticketing path. Currently supports
 // "openproject"; Jira and ServiceNow plug in here in CHA-com.
+//
+// Sprint 4.2 — required-flag validation. When --ticketing-provider is set,
+// the per-provider required flags are checked up-front and any missing
+// value returns an error here, BEFORE the watcher boots. Previously the
+// validator was silent: a misconfigured tenant ID could land in the
+// sink and only surface at first-ticket time as a 404 from the provider.
 func buildTicketingConfig(o ticketingOpts) (report.TicketingConfig, error) {
 	if o.Provider == "" {
 		return report.TicketingConfig{}, nil
+	}
+	if err := validateTicketingOpts(o); err != nil {
+		return report.TicketingConfig{}, err
 	}
 	switch o.Provider {
 	case "openproject":
@@ -722,6 +747,27 @@ func buildTicketingConfig(o ticketingOpts) (report.TicketingConfig, error) {
 		}, nil
 	default:
 		return report.TicketingConfig{}, fmt.Errorf("unsupported ticketing provider %q (OSS supports: openproject)", o.Provider)
+	}
+}
+
+// validateTicketingOpts enforces required-flag combinations per provider.
+// Returns a descriptive error naming the missing flag so an operator can
+// fix their args without going to the source.
+func validateTicketingOpts(o ticketingOpts) error {
+	switch o.Provider {
+	case "openproject":
+		if o.MCPURL == "" {
+			return fmt.Errorf("--ticketing-provider=openproject requires --ticketing-mcp-url (or $TICKETING_MCP_URL)")
+		}
+		if o.ProjectID == "" {
+			return fmt.Errorf("--ticketing-provider=openproject requires --ticketing-project")
+		}
+		if os.Getenv("TICKETING_MCP_API_KEY") == "" {
+			return fmt.Errorf("--ticketing-provider=openproject requires $TICKETING_MCP_API_KEY")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported ticketing provider %q (OSS supports: openproject)", o.Provider)
 	}
 }
 

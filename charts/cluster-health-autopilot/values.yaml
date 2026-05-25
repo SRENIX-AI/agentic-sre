@@ -6,8 +6,12 @@
 #                   OPT-IN via .Values.remediation.enabled. Off by default.
 
 image:
-  repository: docker4zerocool/cluster-health-autopilot
-  tag: ""                         # default = .Chart.appVersion (e.g. v0.1.0)
+  # GitHub Container Registry is the canonical publish target as of v1.6.0.
+  # docker4zerocool/cluster-health-autopilot remains a mirror (published by
+  # the same GoReleaser config) for backward-compat with v1.5.x installs.
+  # See .goreleaser.yaml — both registries get every release.
+  repository: ghcr.io/bionic-ai-solutions/cluster-health-autopilot
+  tag: ""                         # default = .Chart.appVersion (e.g. v1.6.0)
   pullPolicy: IfNotPresent
   pullSecrets: []                 # e.g. [{name: dockerhub-secret}]
 
@@ -242,6 +246,21 @@ watcher:
   remedy:
     enabled: false                 # Run auto-fixers after each cycle (live mutation).
     dryRun: false                  # Evaluate fixers without mutating cluster state.
+  # Sprint 4.3 — Lease-based leader election.
+  # When enabled (default), two watcher replicas race for a
+  # coordination.k8s.io/v1.Lease object; only the lease-holder runs the
+  # probe/fix/post cycle. If the leader pod dies, the other takes over
+  # within ~30s. Required for any replicas > 1 deployment.
+  #
+  # Disable for single-pod dev or out-of-cluster invocations (cha
+  # snapshot capture, cha diagnose). The chart's default replicas=1
+  # works either way but with election ON it's also safe to scale up.
+  leaderElection:
+    enabled: true
+    leaseName: cha-watcher
+    leaseDuration: 30s
+    renewDeadline: 20s
+    retryPeriod: 5s
   resources:
     limits:
       cpu: 500m

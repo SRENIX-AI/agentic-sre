@@ -5,6 +5,7 @@ package watcher
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
@@ -101,3 +102,165 @@ func TestDiffPostFixStatePersistedToSeen(t *testing.T) {
 		t.Errorf("toResolve on next cycle = %d, want 0 — post-fix seen must not contain the fixed subject", len(toResolve2))
 	}
 }
+
+// --- Sprint 4.1 — pure-logic dedup tests ---------------------------------
+
+func TestFingerprint_Deterministic(t *testing.T) {
+	a := fingerprint("Pod/ns/p", "critical", "x failed")
+	b := fingerprint("Pod/ns/p", "critical", "x failed")
+	if a != b {
+		t.Errorf("fingerprint not deterministic: %s vs %s", a, b)
+	}
+}
+
+func TestFingerprint_DifferentSeverity_DifferentFP(t *testing.T) {
+	if fingerprint("S", "warning", "msg") == fingerprint("S", "critical", "msg") {
+		t.Error("severity change must alter fingerprint")
+	}
+}
+
+func TestFingerprint_DifferentMessage_DifferentFP(t *testing.T) {
+	if fingerprint("S", "warning", "msg-1") == fingerprint("S", "warning", "msg-2") {
+		t.Error("message change must alter fingerprint")
+	}
+}
+
+func TestBuildCurrentState_KeyedBySubject(t *testing.T) {
+	diags := []diagnose.Diagnostic{
+		{Subject: "Pod/ns/a", Message: "broken", Severity: "critical"},
+		{Subject: "Pod/ns/b", Message: "warning", Severity: "warning"},
+	}
+	got := buildCurrentState(nil, diags)
+	if len(got) != 2 || got["Pod/ns/a"].severity != "critical" {
+		t.Errorf("buildCurrentState: %+v", got)
+	}
+}
+
+func TestBuildCurrentState_DefaultSeverityWarning(t *testing.T) {
+	diags := []diagnose.Diagnostic{{Subject: "X/ns/y", Message: "z"}}
+	got := buildCurrentState(nil, diags)
+	if e := got["X/ns/y"]; e == nil || e.severity != "warning" {
+		t.Errorf("expected default severity=warning, got %+v", e)
+	}
+}
+
+func TestDiff_NewSubject_ToPost(t *testing.T) {
+	w := &Watcher{seen: map[string]*seenEntry{}}
+	cur := map[string]*seenEntry{
+		"S": {subject: "S", fp: "fp-1", severity: "critical", message: "broken"},
+	}
+	toPost, toResolve := w.diff(cur)
+	if len(toPost) != 1 || toPost[0].subject != "S" {
+		t.Errorf("new subject should be in toPost; got %+v", toPost)
+	}
+	if len(toResolve) != 0 {
+		t.Errorf("nothing to resolve; got %+v", toResolve)
+	}
+}
+
+func TestDiff_IdenticalFingerprint_NoPost(t *testing.T) {
+	w := &Watcher{seen: map[string]*seenEntry{
+		"S": {subject: "S", fp: "fp-1", lastPosted: time.Now()},
+	}}
+	cur := map[string]*seenEntry{
+		"S": {subject: "S", fp: "fp-1", severity: "critical", message: "broken"},
+	}
+	toPost, _ := w.diff(cur)
+	if len(toPost) != 0 {
+		t.Errorf("same fp should not re-post; got %+v", toPost)
+	}
+}
+
+func TestDiff_ChangedFingerprint_ToPost(t *testing.T) {
+	w := &Watcher{seen: map[string]*seenEntry{
+		"S": {subject: "S", fp: "fp-old", lastPosted: time.Now()},
+	}}
+	cur := map[string]*seenEntry{
+		"S": {subject: "S", fp: "fp-new", severity: "critical"},
+	}
+	toPost, _ := w.diff(cur)
+	if len(toPost) != 1 {
+		t.Errorf("changed fp should re-post; got %+v", toPost)
+	}
+}
+
+func TestDiff_RepeatIntervalElapsed_ToPost(t *testing.T) {
+	old := time.Now().Add(-2 * time.Hour)
+	w := &Watcher{
+		seen: map[string]*seenEntry{
+			"S": {subject: "S", fp: "fp-1", lastPosted: old},
+		},
+		cfg: Config{RepeatInterval: time.Hour},
+	}
+	cur := map[string]*seenEntry{"S": {subject: "S", fp: "fp-1", severity: "critical"}}
+	if toPost, _ := w.diff(cur); len(toPost) != 1 {
+		t.Errorf("past RepeatInterval should re-post; got %+v", toPost)
+	}
+}
+
+func TestDiff_PostOnResolvedOnlyEmitsWhenEnabled(t *testing.T) {
+	w := &Watcher{
+		seen: map[string]*seenEntry{"old": {subject: "old", fp: "x"}},
+		cfg:  Config{PostOnResolved: false},
+	}
+	if _, toResolve := w.diff(map[string]*seenEntry{}); len(toResolve) != 0 {
+		t.Errorf("PostOnResolved=false should suppress; got %+v", toResolve)
+	}
+	w.cfg.PostOnResolved = true
+	if _, toResolve := w.diff(map[string]*seenEntry{}); len(toResolve) != 1 {
+		t.Errorf("PostOnResolved=true should emit; got %+v", toResolve)
+	}
+}
+
+func TestUpdateSeen_RemovesAbsentSubjects(t *testing.T) {
+	w := &Watcher{
+		seen: map[string]*seenEntry{
+			"S1": {subject: "S1", fp: "a"},
+			"S2": {subject: "S2", fp: "b"},
+		},
+	}
+	cur := map[string]*seenEntry{"S1": {subject: "S1", fp: "a"}}
+	w.updateSeen(cur, nil)
+	if _, ok := w.seen["S2"]; ok {
+		t.Errorf("S2 should be removed; seen=%+v", w.seen)
+	}
+}
+
+func TestUpdateSeen_PreservesLastPostedWhenUnPosted(t *testing.T) {
+	earlier := time.Now().Add(-time.Hour)
+	w := &Watcher{
+		seen: map[string]*seenEntry{
+			"S": {subject: "S", fp: "a", lastPosted: earlier},
+		},
+	}
+	cur := map[string]*seenEntry{"S": {subject: "S", fp: "a"}}
+	w.updateSeen(cur, nil)
+	if !w.seen["S"].lastPosted.Equal(earlier) {
+		t.Errorf("lastPosted should be preserved; got %v want %v",
+			w.seen["S"].lastPosted, earlier)
+	}
+}
+
+func TestUpdateSeen_RefreshesLastPostedForPosted(t *testing.T) {
+	earlier := time.Now().Add(-time.Hour)
+	w := &Watcher{
+		seen: map[string]*seenEntry{
+			"S": {subject: "S", fp: "old", lastPosted: earlier},
+		},
+	}
+	cur := map[string]*seenEntry{"S": {subject: "S", fp: "new"}}
+	w.updateSeen(cur, []*seenEntry{cur["S"]})
+	if w.seen["S"].lastPosted.Equal(earlier) {
+		t.Errorf("lastPosted should be refreshed; got %v (= earlier)", w.seen["S"].lastPosted)
+	}
+	if w.seen["S"].fp != "new" {
+		t.Errorf("fp should be updated; got %q", w.seen["S"].fp)
+	}
+}
+
+func TestHasActions_NilEmpty(t *testing.T) {
+	if hasActions(nil) {
+		t.Error("hasActions(nil) should be false")
+	}
+}
+
