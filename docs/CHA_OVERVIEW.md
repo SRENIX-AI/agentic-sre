@@ -55,11 +55,15 @@ infrastructure.
 | Capability | Free OSS (single cluster) | Paid (per cluster) | Enterprise |
 |---|---|---|---|
 | Zero-trust snapshot + live watcher | ✓ | ✓ | ✓ |
-| 6 probes · 8 analyzers · 4 default fixers + 1 opt-in (TLSSecretMismatch) | ✓ | ✓ | ✓ |
+| 12 probes · 8 analyzers · 4 default fixers + 1 opt-in (TLSSecretMismatch) | ✓ | ✓ | ✓ |
 | `VaultPathMissing` analyzer source (Apache-2.0; you supply the Vault client) | ✓ | ✓ | ✓ |
 | Ingress host auto-discovery (v1.2) | ✓ | ✓ | ✓ |
 | Layer-1 flake suppression — retry + 2-of-2 streak (v1.4) | ✓ | ✓ | ✓ |
 | **Layer-2 Investigator — rule-based, deterministic, read-only (v1.5)** | ✓ | ✓ | ✓ |
+| **Fixer safety nets — GitOps + paused + suspended + cert-mgr health (v1.6)** | ✓ | ✓ | ✓ |
+| **6 new probes: node pressure, system DaemonSets, pending pods, generic CrashLoop, ETCD, failed mounts (v1.6)** | ✓ | ✓ | ✓ |
+| **Configurable critical-workload list via env + annotation (v1.6)** | ✓ | ✓ | ✓ |
+| **Lease-based leader election for HA watcher (v1.6)** | ✓ | ✓ | ✓ |
 | DriftReport CRD · Slack · Alertmanager | ✓ | ✓ | ✓ |
 | Helm chart with narrow RBAC + protected-namespace list | ✓ | ✓ | ✓ |
 | Pattern registry — patterns 3 months EARLIER than OSS | — | ✓ | ✓ |

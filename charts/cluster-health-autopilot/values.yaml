@@ -12,7 +12,11 @@ image:
   # See .goreleaser.yaml — both registries get every release.
   repository: ghcr.io/bionic-ai-solutions/cluster-health-autopilot
   tag: ""                         # default = .Chart.appVersion (e.g. v1.6.0)
-  pullPolicy: IfNotPresent
+  # pullPolicy is left empty so the `cha.pullPolicy` helper picks it
+  # automatically: Always for mutable tags (latest / main / dev /
+  # `*-latest`) and IfNotPresent for semver-pinned tags. Override only
+  # when you specifically need to force one or the other.
+  pullPolicy: ""
   pullSecrets: []                 # e.g. [{name: dockerhub-secret}]
 
 # Diagnose CronJob — always enabled.

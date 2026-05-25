@@ -1162,6 +1162,37 @@ richer free-form root-cause writeups for failure modes the rule-based version do
 cover. Design and rollout details: see
 [`docs/design/2026-05-investigator-agent.md`](design/2026-05-investigator-agent.md).
 
+### Sprint 2 — Per-probe opt-out env vars (v1.6.0)
+
+Each new probe is independently disablable via env var on the watcher
+Deployment (or CronJob, for diagnose/remediate). Set to `off`:
+
+| Env var | Disables |
+|---|---|
+| `CHA_PROBE_NODE_PRESSURE` | NodePressure probe |
+| `CHA_PROBE_DAEMONSETS` | System DaemonSets probe |
+| `CHA_PROBE_PENDING_PODS` | PendingPods probe |
+| `CHA_PROBE_CRASHLOOP` | Generic CrashLoopBackOff probe |
+| `CHA_PROBE_ETCD` | ETCD probe (use this for k3s / managed control plane) |
+| `CHA_PROBE_FAILED_MOUNTS` | FailedMounts probe |
+
+Critical-workloads list configuration (Sprint 2.6):
+
+| Env var | Effect |
+|---|---|
+| `CHA_CRITICAL_SERVICES` | Semicolon-separated `ns/selector\|Display` pairs; appended to compiled-in defaults |
+| `CHA_CRITICAL_SERVICES_REPLACE=true` | Replace defaults entirely (clusters with no Bionic services) |
+| Annotation `cha.bionicaisolutions.com/probe-critical: "true"` | On any Deployment / StatefulSet, opts it into the Services probe |
+| Annotation `cha.bionicaisolutions.com/probe-display: "..."` | Friendly display name for the annotated workload |
+
+Leader election (Sprint 4.3):
+
+| Env var | Effect |
+|---|---|
+| `CHA_LEADER_ELECTION=off` | Disable lease acquisition (single-pod dev / non-K8s) |
+| `MY_POD_NAMESPACE` | Lease namespace (downward-API; chart sets automatically) |
+| `MY_POD_NAME` | Lease holder identity (downward-API; chart sets automatically) |
+
 ### DriftReport CR change
 
 `DriftReport.spec.investigation` (string, maxLength 1024) carries the Investigator
@@ -1171,24 +1202,92 @@ field on the next watcher cycle.
 
 ---
 
+## Upgrading from v1.5.x → v1.6.0
+
+Two operational gotchas worth knowing about:
+
+### `helm upgrade --reuse-values` no longer works for v1.6.0
+
+The v1.6.0 chart added new value blocks (`watcher.leaderElection`,
+`diagnose.backoffLimit`, `diagnose.activeDeadlineSeconds`,
+`remediation.backoffLimit`, `remediation.activeDeadlineSeconds`).
+Helm's `--reuse-values` flag carries *only* user-set values from the
+prior release; chart-default blocks fall back to nil and the
+templates panic. Use `--reset-then-reuse-values` (Helm 3.14+) instead:
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reset-then-reuse-values \
+  --set image.tag=v1.6.0
+```
+
+### Mutable tags + IfNotPresent — pin to a digest or use a unique tag
+
+If you push the same mutable tag (e.g. `latest`, `v1.6.0`) twice with
+different image content, the kubelet's `IfNotPresent` cache will use
+the stale digest. The v1.6.0 chart adds a `cha.pullPolicy` helper that
+detects mutable tags (`latest`, `*-latest`, `main`, `dev`) and forces
+`imagePullPolicy: Always`. Semver-style tags continue to use
+`IfNotPresent`. In production, prefer pinning the chart to an
+immutable tag or a digest reference.
+
+### New v1.6.0 capabilities
+
+After the upgrade, verify the new probes are firing:
+
+```sh
+kubectl exec -n cluster-health-autopilot \
+  deploy/cha-cluster-health-autopilot-watcher \
+  -- /usr/local/bin/cha diagnose --live --format text
+```
+
+Twelve probes should appear (Ceph / Postgres / Critical Services /
+Cluster Nodes / Storage Claims / External Endpoints **+ Node Pressure /
+System DaemonSets / Pending Pods / CrashLoopBackOff / ETCD / Failed
+Mounts**).
+
+The watcher pod will log lease acquisition on startup:
+```
+watcher: acquired lease cluster-health-autopilot/cha-watcher as "<pod-name>"
+```
+
+---
+
 ## Appendix — Key Helm values reference
 
 ```yaml
 image:
-  repository: docker4zerocool/cluster-health-autopilot   # Docker Hub
-  tag: ""         # defaults to Chart.appVersion (e.g. v1.5.2)
-  pullPolicy: IfNotPresent
-  pullSecrets: [] # [{name: dockerhub-pull-secret}]
+  # GitHub Container Registry is the canonical publish target as of v1.6.0.
+  # docker4zerocool/cluster-health-autopilot is mirrored on every release.
+  repository: ghcr.io/bionic-ai-solutions/cluster-health-autopilot
+  tag: ""           # defaults to Chart.appVersion (e.g. v1.6.0)
+  pullPolicy: ""    # auto: Always for mutable tags, IfNotPresent for semver
+  pullSecrets: []   # [{name: dockerhub-pull-secret}]
 
 diagnose:
   enabled: true
   schedule: "0 9 * * *"
-  format: daily   # daily | text | json
+  format: daily              # daily | text | json
+  backoffLimit: 1            # v1.6: cap Job retries (K8s default was 6)
+  activeDeadlineSeconds: 120 # v1.6: cap Job wall-clock (K8s default was unlimited)
 
 remediation:
   enabled: false
   schedule: "*/30 * * * *"
   dryRun: false
+  backoffLimit: 1            # v1.6
+  activeDeadlineSeconds: 120 # v1.6
+
+# Sprint 4.3 — Lease-based leader election. Default on so multi-replica
+# watcher deployments are safe. Disable for single-pod dev / non-K8s runs.
+watcher:
+  leaderElection:
+    enabled: true
+    leaseName: cha-watcher
+    leaseDuration: 30s
+    renewDeadline: 20s
+    retryPeriod: 5s
 
 fixers:
   # Opt-in OSS fixer added in v1.3. When true:

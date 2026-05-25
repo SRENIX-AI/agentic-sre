@@ -1,8 +1,33 @@
 # Design: Trigger-Class Expansion Roadmap
 
-Status: **Draft / pre-implementation**
-Tracked: planned for v1.6–v2.0
-Author: investigation 2026-05-16
+Status: **Partially shipped (v1.6.0) — see "v1.6 status" below**
+Tracked: v1.6.0 closed the M1 asset-class gap (6 net-new probes);
+M2+ (Kong / HPA / ArgoCD / Velero / trigger-class B/C/E) remain
+roadmap-class for v1.7+.
+Author: investigation 2026-05-16; updated 2026-05-25 post-v1.6.0
+
+## v1.6 status (shipped)
+
+- ✅ **NodePressure probe** — DiskPressure / MemoryPressure / PIDPressure / NetworkUnavailable
+- ✅ **DaemonSets probe** — 8 system namespaces (kube-system, cilium-system, calico-system, kube-flannel, rook-ceph, longhorn-system, openebs, metallb-system)
+- ✅ **PendingPods probe** — scheduler `PodScheduled=False` past 60s grace
+- ✅ **CrashLoopBackOff probe** — generic any-namespace detector
+- ✅ **ETCD probe** — kubeadm static-pod members
+- ✅ **FailedMounts probe** — `ContainerCreating` past 90s grace + kubelet mount events
+- ✅ **Configurable critical-workloads list** — `CHA_CRITICAL_SERVICES` env + `cha.bionicaisolutions.com/probe-critical: "true"` annotation
+- ✅ **Per-probe opt-out env vars** — `CHA_PROBE_<NAME>=off`
+
+## v1.7+ roadmap (not yet shipped)
+
+- ⏳ **Kong** routes/upstreams probe (M2)
+- ⏳ **HPA** scaling-failure probe (M2)
+- ⏳ **ArgoCD** Application sync-status probe (M3)
+- ⏳ **Velero** backup-completion probe (M3)
+- ⏳ **Trigger-class B** status-transition fast path (sub-probe routing)
+- ⏳ **Trigger-class C** Alertmanager webhook → CHA probe trigger
+- ⏳ **Trigger-class E** external webhook ingestion (Vault rotation, cert-manager `Issued`, Cloudflare)
+
+---
 
 ## Problem
 

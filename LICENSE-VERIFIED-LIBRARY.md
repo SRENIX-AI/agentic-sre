@@ -1,10 +1,51 @@
 # Cluster Health Autopilot — Verified Signature Library License
 
-**Version 1.0 — 2026-05-22**
+**Version 1.0 (DRAFT) — 2026-05-22**
 **Licensor:** Bionic AI Solutions, Inc. ("Bionic")
 **Contact:** licensing@baisoln.com
 
-> ⚠️ **Draft — pending legal review.** This document represents Bionic's intent for the commercial Verified Signature Library license. The final binding text will be issued by Bionic's counsel before the first paid subscription is sold. Until then, this file is informational.
+> ## ⚠️ DRAFT — DO NOT EXECUTE WITHOUT LEGAL REVIEW
+>
+> **This document is a non-binding draft.** It was authored by an
+> engineering team to capture Bionic's *intent* for the commercial
+> Verified Signature Library license; **it has not been reviewed by
+> licensed counsel** in any jurisdiction. Specific risks an engineering
+> draft cannot evaluate:
+>
+> - **Enforceability of the use restrictions** (Section 4) under
+>   competition / antitrust law in the EU and certain US states.
+> - **Validity of the warranty disclaimer and liability cap**
+>   (Sections 9–10) — consumer-protection law in some jurisdictions
+>   voids or limits these clauses, especially for SaaS or "essential
+>   facility" software.
+> - **The Delaware forum-selection and governing-law choice**
+>   (Section 12) — non-US licensees may have a statutory right to a
+>   local forum that overrides this clause.
+> - **The "competing product" prohibition** (Section 4.5) — overly
+>   broad as drafted; may not survive scrutiny.
+> - **The trial-use evaluation period** (Section 6) — needs to align
+>   with the subscription agreement's commercial structure.
+>
+> **Before the first paid subscription is offered for sale, Bionic
+> MUST:**
+>
+> 1. Have this document reviewed by counsel licensed in Delaware (the
+>    chosen governing-law jurisdiction).
+> 2. Have it reviewed by counsel in each customer-target jurisdiction
+>    where Bionic intends to sell (minimum: a US-wide SaaS attorney
+>    + EU / UK / India coverage if those markets are targeted).
+> 3. Reconcile it with the underlying subscription agreement
+>    (master services agreement) so the documents don't contradict
+>    each other on payment terms, termination, or auto-renewal.
+> 4. Insert Bionic's actual registered legal-entity name and address
+>    (line 4 above references "Bionic AI Solutions, Inc." — confirm
+>    incorporation status before use).
+> 5. Add a signature block or specify the electronic-acceptance
+>    mechanism (click-through, DocuSign, etc.).
+>
+> Until items 1-5 are complete, this file's content is **informational
+> only** and is not part of any binding agreement between Bionic and
+> any user of the Verified Signature Library.
 
 ---
 

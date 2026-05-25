@@ -48,7 +48,7 @@ spec:
           containers:
             - name: cha
               image: {{ include "cha.image" . }}
-              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              imagePullPolicy: {{ include "cha.pullPolicy" . }}
               args:
                 - diagnose
                 - --live

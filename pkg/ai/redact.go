@@ -112,7 +112,14 @@ func hashShort(s string) string {
 }
 
 // redactText scrubs free-form text (Message, Remediation) of identifiers
-// that could be sensitive when shipped to an LLM endpoint.
+// AND secret-shaped substrings before it is embedded in an LLM prompt.
+//
+// Sprint 3.4 expanded this from identifier-only to also include the
+// secretHeuristics substitution. An analyzer that copies a Kubernetes
+// event message verbatim into Diagnostic.Message could otherwise leak
+// AWS keys / Vault hvs.* tokens / JWTs / GitHub PATs / Slack tokens
+// directly to the LLM endpoint — secretHeuristics catches those shapes
+// regardless of which field they arrive through.
 func redactText(s string) string {
 	if s == "" {
 		return s
@@ -121,6 +128,9 @@ func redactText(s string) string {
 	s = uuidRE.ReplaceAllString(s, "<uid>")
 	s = clusterDomainRE.ReplaceAllString(s, "<cluster>")
 	s = internalHostRE.ReplaceAllStringFunc(s, redactHost)
+	for _, re := range secretHeuristics {
+		s = re.ReplaceAllString(s, "[REDACTED]")
+	}
 	return s
 }
 

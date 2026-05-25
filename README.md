@@ -72,14 +72,23 @@ helm install cha cha/cluster-health-autopilot \
 
 Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-autopilot) — published at `https://bionic-ai-solutions.github.io/cluster-health-autopilot/`.
 
-## What it checks (probes)
+## What it checks (12 probes)
 
-- Distributed storage health (Ceph)
-- Database health (CloudNativePG, Zalando Spilo/Patroni — auto-detected)
-- Critical workloads (configurable list, counted by `READY` column not `phase=Running`)
-- Cluster nodes
-- PVC binding state
-- API connectivity sanity (so transient API problems become a reported `PROBE_FAILED`, not a silent green light)
+K8s cluster:
+- **Ceph storage** — health, capacity, OSD readiness
+- **PostgreSQL** — CloudNativePG + Zalando Spilo/Patroni, auto-detected
+- **Critical workloads** — configurable list (32 Bionic defaults + `CHA_CRITICAL_SERVICES` env + `cha.bionicaisolutions.com/probe-critical: "true"` annotation auto-discovery)
+- **Cluster Nodes** — Ready condition
+- **PVC binding** — Bound vs Pending
+- **External endpoints** — Ingress host auto-discovery + flake suppression (Layer-1)
+- **Node pressure** *(v1.6)* — DiskPressure / MemoryPressure / PIDPressure / NetworkUnavailable; DiskPressure auto-escalates to Critical
+- **System DaemonSets** *(v1.6)* — kube-system / cilium-system / calico-system / kube-flannel / rook-ceph / longhorn-system / openebs / metallb-system
+- **Pending pods** *(v1.6)* — `PodScheduled=False` past 60s grace; reason-aware remediation (Insufficient CPU/Memory, unbound PVC, taint mismatch, nodeSelector)
+- **Generic CrashLoopBackOff** *(v1.6)* — any namespace; protected-NS escalates to Critical immediately, user-NS escalates past restart threshold (default 10)
+- **ETCD** *(v1.6)* — kubeadm-style static-pod etcd; honest "blind probe" Warning on external/managed etcd rather than false-greening
+- **Failed mounts** *(v1.6)* — joins pods stuck `ContainerCreating` with kubelet `FailedMount` / `FailedAttachVolume` / `ProvisioningFailed` events
+
+Each probe can be disabled independently via `CHA_PROBE_<NAME>=off`.
 
 ## What it diagnoses (8 OSS analyzers — read-only)
 

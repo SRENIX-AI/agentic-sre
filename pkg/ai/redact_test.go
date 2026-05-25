@@ -213,3 +213,34 @@ func TestRedactEvents_NilAndEmpty(t *testing.T) {
 		t.Errorf("RedactEvents([]) should return empty, got %+v", got)
 	}
 }
+
+// --- Sprint 3.4b — secret heuristics also apply to Diagnostic.Message --
+
+func TestRedactDiagnostic_ScrubsSecretsInMessage(t *testing.T) {
+	// An analyzer that copies an event message into Diagnostic.Message
+	// (a common pattern for diagnose.ImagePullAuth and the like) must
+	// not leak AWS keys / Vault tokens / JWTs / Slack tokens to the LLM.
+	in := diagnose.Diagnostic{
+		Subject: "Pod/billing/billing-svc-abc",
+		Message: "kubelet event: pull failed for AKIAIOSFODNN7EXAMPLE",
+	}
+	out := RedactDiagnostic(in)
+	if strings.Contains(out.Message, "AKIA") {
+		t.Errorf("AWS key leaked through RedactDiagnostic: %q", out.Message)
+	}
+	if !strings.Contains(out.Message, "[REDACTED]") {
+		t.Errorf("expected [REDACTED] placeholder in message; got %q", out.Message)
+	}
+}
+
+func TestRedactDiagnostic_ScrubsSecretsInRemediation(t *testing.T) {
+	in := diagnose.Diagnostic{
+		Subject:     "Pod/x/y",
+		Message:     "broken",
+		Remediation: "set hvs.AAAAAQLwQ1234567890abcdEF in your config",
+	}
+	out := RedactDiagnostic(in)
+	if strings.Contains(out.Remediation, "hvs.") {
+		t.Errorf("Vault token leaked through RedactDiagnostic remediation: %q", out.Remediation)
+	}
+}
