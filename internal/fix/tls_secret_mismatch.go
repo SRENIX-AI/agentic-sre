@@ -40,23 +40,6 @@ type TLSSecretMismatch struct {
 // Name returns the fixer's identifier.
 func (TLSSecretMismatch) Name() string { return "TLSSecretMismatch" }
 
-// gitopsAnnotations are the Ingress annotations that signal a GitOps-managed
-// resource. If any of these is present, the fixer refuses to mutate — the
-// edit must go through the source repo.
-var gitopsAnnotations = []string{
-	"argocd.argoproj.io/instance",
-	"argocd.argoproj.io/tracking-id",
-	"kustomize.toolkit.fluxcd.io/name",
-	"kustomize.toolkit.fluxcd.io/namespace",
-	"meta.helm.sh/release-name",
-	"meta.helm.sh/release-namespace",
-}
-
-// gitopsLabels parallel gitopsAnnotations for label-based labeling schemes.
-var gitopsLabels = []string{
-	"app.kubernetes.io/managed-by", // values: "Helm", "argocd", "Flux"
-}
-
 // Run executes the fixer.
 func (f TLSSecretMismatch) Run(ctx context.Context, src snapshot.Source, m snapshot.Mutator) Result {
 	r := Result{Fixer: "TLSSecretMismatch"}
@@ -85,7 +68,7 @@ func (f TLSSecretMismatch) Run(ctx context.Context, src snapshot.Source, m snaps
 			r.Skipped = append(r.Skipped, SkipReason{Object: ingObj, Reason: "protected namespace"})
 			continue
 		}
-		if reason := isGitOpsManaged(ing); reason != "" {
+		if reason := GitOpsReason(ing); reason != "" {
 			r.Skipped = append(r.Skipped, SkipReason{
 				Object: ingObj,
 				Reason: "GitOps-managed: " + reason + " — edit the source repo instead",
@@ -144,30 +127,6 @@ func (f TLSSecretMismatch) Run(ctx context.Context, src snapshot.Source, m snaps
 		}
 	}
 	return r
-}
-
-// isGitOpsManaged inspects annotations and labels for GitOps controllers.
-// Returns a human-readable reason string when managed, or "" when CHA may
-// safely mutate.
-func isGitOpsManaged(ing unstructured.Unstructured) string {
-	annotations := ing.GetAnnotations()
-	for _, k := range gitopsAnnotations {
-		if v, ok := annotations[k]; ok && v != "" {
-			return k + "=" + v
-		}
-	}
-	labels := ing.GetLabels()
-	for _, k := range gitopsLabels {
-		if v, ok := labels[k]; ok {
-			// Helm chart releases own the resource via Helm release reconcile.
-			// Argo / Flux similarly mark via this label.
-			switch strings.ToLower(v) {
-			case "helm", "argocd", "flux", "fluxcd":
-				return k + "=" + v
-			}
-		}
-	}
-	return ""
 }
 
 // tlsHostsFix mirrors diagnose.tlsHosts — kept package-local to avoid a
