@@ -119,6 +119,7 @@ var watchedGVRs = []schema.GroupVersionResource{
 	snapshot.GVRDeployment,
 	snapshot.GVRReplicaSet,
 	snapshot.GVRStatefulSet,
+	snapshot.GVRDaemonSet,
 	snapshot.GVRJob,
 	snapshot.GVRCronJob,
 	snapshot.GVRExtSecret,

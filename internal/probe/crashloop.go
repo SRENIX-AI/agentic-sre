@@ -1,0 +1,160 @@
+// Copyright 2026 Cluster Health Autopilot contributors
+// SPDX-License-Identifier: Apache-2.0
+
+package probe
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
+
+// CrashLoopBackOff catches pods stuck in CrashLoopBackOff anywhere in the
+// cluster, not just on the hardcoded critical-services list. The Services
+// probe only watches workloads CHA was told about; this probe catches the
+// rest.
+//
+// Severity scaling:
+//   - In protected namespaces (kube-system etc.) → CRITICAL.
+//   - Elsewhere → WARNING by default; promote to CRITICAL once the pod
+//     accumulates more than CriticalRestartThreshold restarts (default 10).
+//     This gives a deploy time to settle without immediately paging.
+type CrashLoopBackOff struct {
+	// CriticalRestartThreshold is the restart count above which a non-
+	// protected-namespace pod's loop is escalated from WARNING to CRITICAL.
+	// Default: 10.
+	CriticalRestartThreshold int64
+}
+
+// Name returns the component label for the report.
+func (CrashLoopBackOff) Name() string { return "CrashLoopBackOff" }
+
+// Run executes the probe.
+func (c CrashLoopBackOff) Run(ctx context.Context, src snapshot.Source) Result {
+	r := Result{Component: ComponentResult{Component: "CrashLoopBackOff"}}
+	threshold := c.CriticalRestartThreshold
+	if threshold == 0 {
+		threshold = 10
+	}
+
+	pods, err := src.List(ctx, snapshot.GVRPod, "")
+	if err != nil {
+		r.Component.Status = "PROBE_FAILED"
+		r.Component.Detail = "list pods: " + err.Error()
+		return r
+	}
+
+	type hit struct {
+		key      string
+		restarts int64
+		reason   string
+	}
+	var critical, warning []hit
+	for _, pod := range pods.Items {
+		// We don't restrict to Running — kubelet sometimes reports
+		// Pending/CrashLoopBackOff during init-container retries.
+		restarts, found, reason := podMaxRestartCount(pod)
+		if !found {
+			continue
+		}
+		if !strings.Contains(reason, "CrashLoopBackOff") {
+			continue
+		}
+		ns := pod.GetNamespace()
+		h := hit{
+			key:      ns + "/" + pod.GetName(),
+			restarts: restarts,
+			reason:   reason,
+		}
+		if IsProtectedNamespace(ns) || restarts > threshold {
+			critical = append(critical, h)
+		} else {
+			warning = append(warning, h)
+		}
+	}
+
+	if len(critical) == 0 && len(warning) == 0 {
+		r.Component.Status = "HEALTHY"
+		r.Component.Detail = "No CrashLoopBackOff pods detected"
+		return r
+	}
+
+	sort.Slice(critical, func(i, j int) bool { return critical[i].key < critical[j].key })
+	sort.Slice(warning, func(i, j int) bool { return warning[i].key < warning[j].key })
+
+	emit := func(sev Severity, hits []hit) {
+		for _, h := range hits {
+			r.Findings = append(r.Findings, Finding{
+				Component: "CrashLoopBackOff",
+				Severity:  sev,
+				Message: fmt.Sprintf("Pod %s in CrashLoopBackOff (%d restarts)",
+					h.key, h.restarts),
+				Remediation: fmt.Sprintf(
+					"Inspect crash cause: `kubectl logs %s -n %s --previous`. "+
+						"Common causes: bad config, missing dependency, OOM in the workload, broken liveness probe.",
+					splitName(h.key), splitNs(h.key)),
+			})
+		}
+	}
+	emit(SeverityCritical, critical)
+	emit(SeverityWarning, warning)
+
+	parts := []string{}
+	if len(critical) > 0 {
+		ks := make([]string, len(critical))
+		for i, h := range critical {
+			ks[i] = h.key
+		}
+		parts = append(parts, fmt.Sprintf("%d critical (%s)", len(critical), strings.Join(ks, ",")))
+	}
+	if len(warning) > 0 {
+		ks := make([]string, len(warning))
+		for i, h := range warning {
+			ks[i] = h.key
+		}
+		parts = append(parts, fmt.Sprintf("%d warning (%s)", len(warning), strings.Join(ks, ",")))
+	}
+
+	if len(critical) > 0 {
+		r.Component.Status = "CRITICAL"
+	} else {
+		r.Component.Status = "WARNING"
+	}
+	r.Component.Detail = strings.Join(parts, "; ")
+	return r
+}
+
+// podMaxRestartCount scans the pod's containerStatuses (including init
+// containers) and returns the highest restart count and the waiting reason
+// of any container in that state. The found bool indicates whether any
+// container reported a waiting state with a reason at all.
+func podMaxRestartCount(pod unstructured.Unstructured) (int64, bool, string) {
+	statuses, _, _ := getSliceField(pod.Object, "status", "containerStatuses")
+	statuses = append(statuses, mustSlice(pod.Object, "status", "initContainerStatuses")...)
+	if len(statuses) == 0 {
+		return 0, false, ""
+	}
+	var maxRestarts int64
+	var reason string
+	found := false
+	for _, s := range statuses {
+		sm, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		state, _ := sm["state"].(map[string]any)
+		waiting, _ := state["waiting"].(map[string]any)
+		if r, _ := waiting["reason"].(string); r != "" {
+			reason = r
+			found = true
+		}
+		if rc := asInt64(sm["restartCount"]); rc > maxRestarts {
+			maxRestarts = rc
+		}
+	}
+	return maxRestarts, found, reason
+}
