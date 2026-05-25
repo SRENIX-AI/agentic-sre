@@ -250,12 +250,12 @@ func TestStuckCertificateRequests_SkipsWhenCertManagerUnhealthy(t *testing.T) {
 	}
 	foundHealthGate := false
 	for _, s := range r.Skipped {
-		if contains(s.Reason, "cert-manager") && contains(s.Reason, "0 ready") {
+		if contains(s.Reason, "cert-manager") && contains(s.Reason, "0/") {
 			foundHealthGate = true
 		}
 	}
 	if !foundHealthGate {
-		t.Errorf("expected a 'cert-manager … 0 ready' skip entry; got: %+v", r.Skipped)
+		t.Errorf("expected a cert-manager health-gate skip entry naming 0/N readiness; got: %+v", r.Skipped)
 	}
 }
 

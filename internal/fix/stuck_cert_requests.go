@@ -5,9 +5,19 @@ package fix
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
+
+// certManagerNamespace and certManagerDeployment identify the standard
+// cert-manager controller installation. Non-standard installs (different
+// namespace or Deployment name) will see the fixer fall through to its
+// pre-1.5 behavior — see TestStuckCertRequests_ProceedsWhenCertManagerNotInSnapshot.
+const (
+	certManagerNamespace  = "cert-manager"
+	certManagerDeployment = "cert-manager"
 )
 
 // StuckCertificateRequests deletes cert-manager CertificateRequest and ACME
@@ -36,6 +46,25 @@ func (StuckCertificateRequests) Run(ctx context.Context, src snapshot.Source, m 
 	if m == nil {
 		r.Refused = "snapshot mode — fixers require live cluster access"
 		return r
+	}
+
+	// Health gate: if cert-manager's own controller Deployment is captured
+	// in the snapshot and reports 0 ready replicas, refuse to delete CRs.
+	// cert-manager cannot recreate them in this state; the deletion would
+	// just nuke evidence of the failure with no retry. When the Deployment
+	// is absent from the snapshot (non-standard install, incomplete
+	// capture), fall through to the pre-1.5 behavior rather than block.
+	if dep, err := src.Get(ctx, snapshot.GVRDeployment, certManagerNamespace, certManagerDeployment); err == nil && dep != nil {
+		ready, _, _ := unstructured.NestedInt64(dep.Object, "status", "readyReplicas")
+		desired, _, _ := unstructured.NestedInt64(dep.Object, "spec", "replicas")
+		if ready == 0 {
+			r.Skipped = append(r.Skipped, SkipReason{
+				Object: "Deployment/" + certManagerNamespace + "/" + certManagerDeployment,
+				Reason: fmt.Sprintf("cert-manager controller unhealthy: %d/%d ready — refusing to delete CRs (cert-manager cannot recreate them)",
+					ready, desired),
+			})
+			return r
+		}
 	}
 
 	r = deleteStaleCertificateRequests(ctx, src, m, r)
