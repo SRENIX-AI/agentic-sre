@@ -261,7 +261,11 @@ func (e *LiveEnvironment) GetEvents(ctx context.Context, namespace, kind, name s
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
-	return out, nil
+	// Scrub secrets / IPs / hostnames from event messages BEFORE they
+	// can reach an LLM-backed investigator. This is one layer of
+	// defense; the LLM prompt itself also wraps observed_data in
+	// untrusted markers.
+	return ai.RedactEvents(out), nil
 }
 
 // kindToGVR maps the human-friendly kind names the investigator uses to the

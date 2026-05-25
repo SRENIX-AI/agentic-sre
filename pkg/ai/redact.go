@@ -159,6 +159,51 @@ func redactHost(s string) string {
 	return fmt.Sprintf("<host:%s>", hashShort(s))
 }
 
+// RedactEventMessage scrubs a Kubernetes Event message before it is
+// embedded in an LLM prompt. Event messages routinely leak environment-
+// variable values, registry tokens, and per-pod IDs because the kubelet
+// echoes the raw error string from container runtimes. The threat model
+// covers this in §LLM06 (sensitive info leakage); this function is the
+// gate that closes it.
+//
+// The function does two things:
+//
+//  1. Applies the same identifier / IP / UUID / host redactions as free-
+//     form text (redactText).
+//  2. Substitutes a `[REDACTED]` placeholder anywhere the secretHeuristics
+//     regex set matches (long base64 strings, hex tokens, vault hvs.*,
+//     JWTs, AWS access key IDs, GitHub PATs, Slack tokens).
+//
+// The combination keeps the message human-readable for an SRE skimming
+// an alert while removing the most common shapes that should never reach
+// a third-party LLM.
+func RedactEventMessage(s string) string {
+	if s == "" {
+		return s
+	}
+	out := redactText(s)
+	for _, re := range secretHeuristics {
+		out = re.ReplaceAllString(out, "[REDACTED]")
+	}
+	return out
+}
+
+// RedactEvents returns a copy of the input slice with each event's
+// .Message scrubbed via RedactEventMessage. Callers (Environment
+// implementations) should invoke this on the result of any GetEvents
+// call before the events reach an LLM-backed investigator.
+func RedactEvents(events []EventInfo) []EventInfo {
+	if len(events) == 0 {
+		return events
+	}
+	out := make([]EventInfo, len(events))
+	for i, e := range events {
+		e.Message = RedactEventMessage(e.Message)
+		out[i] = e
+	}
+	return out
+}
+
 // ScrubInjection removes known prompt-injection patterns from untrusted
 // text before it is embedded in an LLM prompt.
 //

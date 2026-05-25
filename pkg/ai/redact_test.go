@@ -134,3 +134,82 @@ func TestScrubInjection_PreservesLegitText(t *testing.T) {
 		t.Errorf("scrubber mutated legitimate text:\n  in:  %q\n  out: %q", legit, out)
 	}
 }
+
+// --- RedactEventMessage / RedactEvents (Sprint 3.4) --------------------
+
+func TestRedactEventMessage_ScrubsAwsAccessKey(t *testing.T) {
+	in := "Failed pulling image: 401 Unauthorized (AKIAIOSFODNN7EXAMPLE leaked)"
+	out := RedactEventMessage(in)
+	if strings.Contains(out, "AKIA") {
+		t.Errorf("AWS access key leaked through redaction: %q", out)
+	}
+	if !strings.Contains(out, "[REDACTED]") {
+		t.Errorf("expected [REDACTED] placeholder; got %q", out)
+	}
+}
+
+func TestRedactEventMessage_ScrubsVaultToken(t *testing.T) {
+	in := "ExternalSecret error: token hvs.AAAAAQLwQ1234567890abcdEF rejected by Vault"
+	out := RedactEventMessage(in)
+	if strings.Contains(out, "hvs.") {
+		t.Errorf("vault token leaked: %q", out)
+	}
+}
+
+func TestRedactEventMessage_ScrubsJWT(t *testing.T) {
+	in := "Auth: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.aBcDeFgHiJkLmNoPqRsTuV bad"
+	out := RedactEventMessage(in)
+	if strings.Contains(out, "eyJ") && strings.Contains(out, ".") {
+		// If anything that looks like a JWT survived, that's a leak.
+		// We accept "eyJ" elsewhere in text but not as a JWT structure.
+		if strings.Count(out, ".") >= 2 && strings.Contains(out, "eyJ") {
+			t.Errorf("JWT-like token survived: %q", out)
+		}
+	}
+}
+
+func TestRedactEventMessage_ScrubsIP(t *testing.T) {
+	in := "Pod 192.168.1.42 cannot reach 10.0.0.5"
+	out := RedactEventMessage(in)
+	if strings.Contains(out, "192.168") || strings.Contains(out, "10.0.0.5") {
+		t.Errorf("IP leaked: %q", out)
+	}
+}
+
+func TestRedactEventMessage_PreservesShortText(t *testing.T) {
+	in := "Pulling image: nginx:1.25"
+	out := RedactEventMessage(in)
+	if !strings.Contains(out, "nginx:1.25") {
+		t.Errorf("non-secret content should pass through; got %q", out)
+	}
+}
+
+func TestRedactEvents_AppliedToEach(t *testing.T) {
+	events := []EventInfo{
+		{Reason: "BackOff", Message: "image pull error AKIAIOSFODNN7EXAMPLE"},
+		{Reason: "Healthy", Message: "ok"},
+	}
+	out := RedactEvents(events)
+	if len(out) != 2 {
+		t.Fatalf("len = %d, want 2", len(out))
+	}
+	if strings.Contains(out[0].Message, "AKIA") {
+		t.Errorf("event[0] message not scrubbed: %q", out[0].Message)
+	}
+	if out[1].Message != "ok" {
+		t.Errorf("event[1] should be unchanged; got %q", out[1].Message)
+	}
+	// Sanity: caller's slice should not be mutated.
+	if !strings.Contains(events[0].Message, "AKIA") {
+		t.Errorf("input event was mutated in place; redaction must return a copy")
+	}
+}
+
+func TestRedactEvents_NilAndEmpty(t *testing.T) {
+	if got := RedactEvents(nil); got != nil {
+		t.Errorf("RedactEvents(nil) should return nil, got %+v", got)
+	}
+	if got := RedactEvents([]EventInfo{}); len(got) != 0 {
+		t.Errorf("RedactEvents([]) should return empty, got %+v", got)
+	}
+}
