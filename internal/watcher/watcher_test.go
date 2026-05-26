@@ -198,6 +198,57 @@ func TestDiff_RepeatIntervalElapsed_ToPost(t *testing.T) {
 	}
 }
 
+// Per-severity repeat interval (v1.6.1):
+// critical alerts re-post at the critical interval; warnings stay quiet
+// until the (longer) regular interval elapses.
+func TestDiff_CriticalRepeatIntervalOverride(t *testing.T) {
+	// 2h since last post. Critical=1h should re-post; warning under 24h
+	// should NOT.
+	old := time.Now().Add(-2 * time.Hour)
+	w := &Watcher{
+		seen: map[string]*seenEntry{
+			"crit": {subject: "crit", fp: "fp-c", severity: "critical", lastPosted: old},
+			"warn": {subject: "warn", fp: "fp-w", severity: "warning", lastPosted: old},
+		},
+		cfg: Config{
+			RepeatInterval:         24 * time.Hour,
+			CriticalRepeatInterval: time.Hour,
+		},
+	}
+	cur := map[string]*seenEntry{
+		"crit": {subject: "crit", fp: "fp-c", severity: "critical"},
+		"warn": {subject: "warn", fp: "fp-w", severity: "warning"},
+	}
+	toPost, _ := w.diff(cur)
+	if len(toPost) != 1 {
+		t.Fatalf("only critical should re-post; got %d: %+v", len(toPost), toPost)
+	}
+	if toPost[0].subject != "crit" {
+		t.Errorf("expected critical to be re-posted; got %q", toPost[0].subject)
+	}
+}
+
+// Backward compat: when CriticalRepeatInterval is 0 the per-severity
+// helper falls back to RepeatInterval. Pre-v1.6.1 callers see no change.
+func TestDiff_CriticalFallsBackToRepeatInterval(t *testing.T) {
+	old := time.Now().Add(-2 * time.Hour)
+	w := &Watcher{
+		seen: map[string]*seenEntry{
+			"crit": {subject: "crit", fp: "fp-c", severity: "critical", lastPosted: old},
+		},
+		cfg: Config{
+			RepeatInterval:         time.Hour, // critical should still re-post via fallback
+			CriticalRepeatInterval: 0,
+		},
+	}
+	cur := map[string]*seenEntry{
+		"crit": {subject: "crit", fp: "fp-c", severity: "critical"},
+	}
+	if toPost, _ := w.diff(cur); len(toPost) != 1 {
+		t.Errorf("fallback to RepeatInterval should re-post critical; got %+v", toPost)
+	}
+}
+
 func TestDiff_PostOnResolvedOnlyEmitsWhenEnabled(t *testing.T) {
 	w := &Watcher{
 		seen: map[string]*seenEntry{"old": {subject: "old", fp: "x"}},

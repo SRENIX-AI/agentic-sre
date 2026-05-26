@@ -249,7 +249,9 @@ watcher:
   resyncPeriod: 10m                # Periodic full re-diagnose regardless of events.
   slack:
     postOnResolved: true           # Post when a diagnostic disappears.
-    repeatInterval: 4h             # Re-post still-active issues at this cadence (0=never).
+    repeatInterval: 4h             # Re-post still-active warning/info at this cadence (0=never).
+    criticalRepeatInterval: ""     # Re-post still-active CRITICAL at this cadence (empty = fall back to repeatInterval).
+                                   # Use to keep criticals loud (e.g. "4h") while letting warnings calm down (e.g. set repeatInterval=24h).
   remedy:
     enabled: false                 # Run auto-fixers after each cycle (live mutation).
     dryRun: false                  # Evaluate fixers without mutating cluster state.

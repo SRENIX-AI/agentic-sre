@@ -58,8 +58,16 @@ type Config struct {
 	SlackChannels  report.SlackChannels
 	PostOnResolved bool
 	// RepeatInterval re-posts active diagnostics to Slack after this duration.
-	// Zero disables repeat posts.
+	// Zero disables repeat posts. Applies to warning + info severities; critical
+	// uses CriticalRepeatInterval when that is set.
 	RepeatInterval time.Duration
+
+	// CriticalRepeatInterval re-posts active CRITICAL diagnostics to Slack
+	// after this duration. Zero falls back to RepeatInterval — preserves the
+	// pre-v1.6.1 single-interval behavior for operators who haven't opted in.
+	// Use this to keep critical alerts loud (e.g. 4h reminder) while letting
+	// warnings calm down (e.g. 24h reminder).
+	CriticalRepeatInterval time.Duration
 
 	// AlertmanagerURL is the base URL of the Alertmanager API
 	// (e.g. "http://alertmanager.pg.svc.cluster.local:9093").
@@ -548,6 +556,15 @@ func (w *Watcher) attachApprovalURLs(state map[string]*seenEntry) {
 
 // diff computes which subjects need a Slack post (new/changed/repeat) and which
 // have resolved since the last cycle. Must be called with w.mu held.
+//
+// Repeat-interval selection is severity-aware (v1.6.1+):
+//
+//	critical → CriticalRepeatInterval (falls back to RepeatInterval when 0)
+//	other    → RepeatInterval
+//
+// This lets operators keep critical alerts loud (e.g. 4h reminders) while
+// letting noisier warnings calm down (e.g. 24h reminders). Pre-v1.6.1
+// callers who only set RepeatInterval get identical behavior.
 func (w *Watcher) diff(current map[string]*seenEntry) (toPost, toResolve []*seenEntry) {
 	now := time.Now()
 	for subject, entry := range current {
@@ -556,7 +573,8 @@ func (w *Watcher) diff(current map[string]*seenEntry) (toPost, toResolve []*seen
 			toPost = append(toPost, entry)
 			continue
 		}
-		if w.cfg.RepeatInterval > 0 && now.Sub(existing.lastPosted) >= w.cfg.RepeatInterval {
+		interval := w.repeatIntervalFor(entry.severity)
+		if interval > 0 && now.Sub(existing.lastPosted) >= interval {
 			toPost = append(toPost, entry)
 		}
 	}
@@ -568,6 +586,17 @@ func (w *Watcher) diff(current map[string]*seenEntry) (toPost, toResolve []*seen
 		}
 	}
 	return toPost, toResolve
+}
+
+// repeatIntervalFor returns the Slack re-post interval that applies to a
+// diagnostic of the given severity. Critical alerts use
+// CriticalRepeatInterval when it's set (> 0); everything else (and the
+// pre-v1.6.1 backward-compat path) uses RepeatInterval.
+func (w *Watcher) repeatIntervalFor(severity string) time.Duration {
+	if severity == "critical" && w.cfg.CriticalRepeatInterval > 0 {
+		return w.cfg.CriticalRepeatInterval
+	}
+	return w.cfg.RepeatInterval
 }
 
 // updateSeen merges current into the seen map. Must be called with w.mu held.

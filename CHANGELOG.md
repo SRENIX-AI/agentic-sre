@@ -13,6 +13,28 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added
+- **Per-severity Slack repeat intervals (v1.6.1).** New `--slack-critical-repeat-interval`
+  flag on `cha watch` lets operators keep critical alerts loud (e.g. `4h`)
+  while letting warnings calm down (e.g. `--slack-repeat-interval=24h`).
+  Zero (default) falls back to `--slack-repeat-interval` so pre-v1.6.1
+  callers see identical behavior. Chart value:
+  `watcher.slack.criticalRepeatInterval` (empty string = fallback).
+  Replaces the single-cadence behavior reported as noisy on long-running
+  warnings: a stable warning would previously re-post 6×/day at the 4h
+  default.
+
+### Fixed
+- **Helm chart: `watcher.slack.postOnResolved=false` was silently flipped
+  back to `true`.** The template line
+  `{{ ... | default true }}` treats bool `false` as empty under sprig and
+  substitutes the default. Operators who set the value via `helm --set`
+  or values.yaml override saw the rendered Deployment still carrying
+  `--slack-post-on-resolved=true`. Same bug latent on `repeatInterval`
+  (string "4h" never tripped the empty check, but the pattern was
+  unsafe). values.yaml already provides sane defaults, so we now render
+  the values directly. Chart version bumped 1.6.0 → 1.6.1.
+
 ### Changed
 - **`internal/vault` → `pkg/vault` package promotion (v1.6.1 prep).** The
   Vault `Client` interface, `HTTPClient` concrete implementation, `New()`
