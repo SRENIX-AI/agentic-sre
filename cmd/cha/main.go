@@ -415,6 +415,7 @@ func watchCmd() *cobra.Command {
 		slackCritical           string
 		postOnResolved          bool
 		repeatInterval          time.Duration
+		criticalRepeatInterval  time.Duration
 		writeDriftReports       bool
 		remedy                  bool
 		dryRun                  bool
@@ -520,9 +521,10 @@ the post-fix cluster state.`,
 					Alerts:   slackAlerts,
 					Critical: slackCritical,
 				},
-				PostOnResolved:    postOnResolved,
-				RepeatInterval:    repeatInterval,
-				WriteDriftReports: writeDriftReports,
+				PostOnResolved:         postOnResolved,
+				RepeatInterval:         repeatInterval,
+				CriticalRepeatInterval: criticalRepeatInterval,
+				WriteDriftReports:      writeDriftReports,
 				RunRemediation:    remedy,
 				DryRun:            dryRun,
 				AlertmanagerURL:   alertmanagerURL,
@@ -542,7 +544,8 @@ the post-fix cluster state.`,
 	c.Flags().StringVar(&slackAlerts, "slack-alerts", "", "Slack webhook for #ceph-alerts — CHA acted (auto-fixed issues); used as fallback when --alertmanager-url is not set")
 	c.Flags().StringVar(&slackCritical, "slack-critical", "", "Slack webhook for #ceph-critical — human action required; used as fallback when --alertmanager-url is not set")
 	c.Flags().BoolVar(&postOnResolved, "slack-post-on-resolved", true, "Post to Slack when a diagnostic resolves")
-	c.Flags().DurationVar(&repeatInterval, "slack-repeat-interval", 4*time.Hour, "Re-post still-active diagnostics at this interval (0 = never repeat)")
+	c.Flags().DurationVar(&repeatInterval, "slack-repeat-interval", 4*time.Hour, "Re-post still-active diagnostics at this interval (0 = never repeat). Applies to warning + info severities; critical uses --slack-critical-repeat-interval when set.")
+	c.Flags().DurationVar(&criticalRepeatInterval, "slack-critical-repeat-interval", 0, "Re-post still-active CRITICAL diagnostics at this interval (0 = use --slack-repeat-interval). Use to keep criticals loud (e.g. 4h) while warnings calm down (e.g. 24h).")
 	c.Flags().BoolVar(&writeDriftReports, "write-driftreports", true, "Upsert DriftReport CRs on every cycle (live mode only)")
 	c.Flags().BoolVar(&remedy, "remedy", false, "Run auto-fixers after each diagnose cycle; post-fix state is reported")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "With --remedy: evaluate fixers without applying changes")

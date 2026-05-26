@@ -67,6 +67,11 @@ spec:
                   silently flip an explicit `false` back to `true`. */}}
             - --slack-post-on-resolved={{ .Values.watcher.slack.postOnResolved }}
             - --slack-repeat-interval={{ .Values.watcher.slack.repeatInterval }}
+            {{- /* criticalRepeatInterval: empty string = "fall back to
+                  repeatInterval" — render only when explicitly set. */}}
+            {{- with .Values.watcher.slack.criticalRepeatInterval }}
+            - --slack-critical-repeat-interval={{ . }}
+            {{- end }}
             {{- end }}
             {{- if and .Values.alertmanager.enabled .Values.alertmanager.url }}
             - --alertmanager-url={{ .Values.alertmanager.url }}
