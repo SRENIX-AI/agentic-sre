@@ -14,12 +14,12 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 | AWS cloud probes (10) — RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC + IRSA. Off by default (`cloud.enabled=false`) | ✅ shipped |
 | Helm chart (v1.6.2) with lease-based leader election (active in cluster), configurable workloads, narrow RBAC, per-severity Slack repeat intervals | ✅ shipped |
 | OpenProject ticketing sink (OSS) via MCP, Slack 3-channel routing with `--slack-critical-repeat-interval`, Alertmanager | ✅ shipped |
-| Layer-2 rule-based Investigator (OSS) with event scrubbing | ✅ shipped |
+| Layer-2 Investigator (OSS: deterministic implementation; CHA-com: LLM-backed agent) with event scrubbing + 6-tool action space | ✅ shipped |
 | GCP cloud probes | ⏳ roadmap (M2 / v1.7+) — `pkg/cloud/gcp/client.go` is scaffold only |
 | Azure cloud probes | ⏳ roadmap (M2 / v1.7+) — `pkg/cloud/azure/client.go` is scaffold only |
 | CHA-com paid binary v1.6.0 (pinned to OSS v1.6.2): approval-server, Ed25519 signing, gen-signing-key, paid catalog | ✅ shipped at `docker4zerocool/cha-com:1.6.0` (multi-arch) |
 | Four paid-tier analyzers: `VaultPathDriftPro`, `CertificateChainAnomaly`, `MultiClusterDrift`, `StatefulSetReplicaPressure` | ✅ shipped (CHA-com v1.0.1–v1.0.4) |
-| Paid AI tiers — T0 narration, T1 fix proposer (5 whitelisted action_kinds), T2 multi-step planner, T3 vault break-glass runbook (dual-approval, JWT-signed, hash-chained audit) | ✅ shipped (CHA-com v1.1.0–v1.4.0) |
+| Paid AI tiers — T0 narration, T1 fix proposer (5 operator-policy-bounded action_kinds), T2 multi-step planner, T3 vault break-glass runbook (dual-approval, JWT-signed, hash-chained audit) | ✅ shipped (CHA-com v1.1.0–v1.4.0) |
 | `cha-com watch` subcommand — AI-layered poll loop with fingerprint dedup, `--ai-audit-log` JSONL sink | ✅ shipped (CHA-com v1.5.0) |
 | Operator port (controller-runtime / kubebuilder) | ⏳ roadmap (Sprint 5 / v1.7) |
 
@@ -27,7 +27,7 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 
 ## What it does
 
-`cha` runs a battery of probes against your cluster, applies a whitelist of known-safe fixes for recognized failure patterns, re-probes, and produces a single report listing fixes applied and any residual issues with precise remediation hints. It runs in two modes:
+`cha` runs a battery of probes against your cluster, applies operator-policy-bounded fixes for recognized failure patterns, re-probes, and produces a single report listing fixes applied and any residual issues with precise remediation hints. The paid CHA-com layer adds an **LLM Investigator agent** and the T0–T3 AI SRE tiers on top — same policy bounds, signed actions, hash-chained audit. CHA runs in two modes:
 
 - **Zero-trust offline mode** — point it at a captured `kubectl get … -o json` snapshot. No install, no RBAC, no write permissions. Diagnose your cluster from your laptop in 30 seconds.
 - **In-cluster live mode** — installed via Helm; runs as a CronJob with two narrowly-scoped ClusterRoles (read-only + tightly-bounded write); posts to Slack on a schedule.
@@ -137,7 +137,7 @@ Enable with `--aws-enabled` (or `cloudProbes.aws.enabled: true` in Helm values).
 
 GCP and Azure probes are scoped for the M2 milestone of the cloud-probe roadmap; see [`docs/design/2026-05-cloud-probe-framework.md`](docs/design/2026-05-cloud-probe-framework.md).
 
-## What it auto-fixes (whitelisted)
+## What it auto-fixes (operator-policy-bounded)
 
 - **StaleErrorPods** — `Error`/`Failed` pods owned by a Job or unowned (debug leftovers).
 - **StuckJobsWithBadSecretRef** — frozen Jobs whose pod template references a renamed Secret key; CronJob template is corrected — fixer deletes the Job so the CronJob respawns clean.
@@ -156,7 +156,7 @@ GCP and Azure probes are scoped for the M2 milestone of the cloud-probe roadmap;
 
 When a Finding or Diagnostic reaches CRITICAL, a read-only Investigator runs a deep-dive (DNS, HTTP probe, TLS inspect, kubectl describe, recent events) and attaches a one-line root-cause Summary to the alert. Renders as a 🔬 block in Slack/Alertmanager and persists on `DriftReport.spec.investigation`.
 
-The OSS catalog ships a deterministic, rule-based Investigator covering TLS expiry, TLS SAN mismatch, DNS failure, slow-DNS classification, transient-recovery detection, status mismatch, ExternalSecret diagnostics, and Certificate state. No new RBAC; reuses the watcher's existing read access. Disable with `CHA_INVESTIGATOR=off`. The paid CHA-com binary replaces it with an LLM-backed Investigator using the same closed-enum `Environment` surface.
+OSS ships a deterministic Investigator implementation covering TLS expiry, TLS SAN mismatch, DNS failure, slow-DNS classification, transient-recovery detection, status mismatch, ExternalSecret diagnostics, and Certificate state — the predictable baseline. No new RBAC; reuses the watcher's existing read access. Disable with `CHA_INVESTIGATOR=off`. The paid CHA-com binary replaces it with an **LLM Investigator agent** using the same closed-enum `Environment` surface — same read-only tool space, same audit shape, more reasoning.
 
 ## Architecture
 
@@ -172,7 +172,7 @@ The OSS catalog ships a deterministic, rule-based Investigator covering TLS expi
 - **[docs/ONE_PAGER.md](docs/ONE_PAGER.md)** — design-partner brief; the elevator-pitch version of this README with pricing and validation.
 - **[docs/FAILURE_MODES.md](docs/FAILURE_MODES.md)** — every fixer + analyzer in the catalog: symptom, root cause, why it's safe, real-world example, source link.
 - **[docs/AI_TIERS.md](docs/AI_TIERS.md)** — definitive spec for Layer-2 + T0–T3 (capabilities, inputs, output schemas, safety contracts).
-- **[docs/AI_USAGE.md](docs/AI_USAGE.md)** — positioning: LLM-free hot path; rule-based Layer-2 investigator in OSS; LLM AI is paid + opt-in.
+- **[docs/AI_USAGE.md](docs/AI_USAGE.md)** — positioning: LLM-free hot path; deterministic Layer-2 investigator baseline in OSS; LLM-backed Investigator agent + AI tiers in CHA-com (paid + opt-in).
 - **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** — install reference, Helm value catalog, RBAC, troubleshooting.
 - **[docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md)** — storyboarded demo flow with deliberate-failure scenarios.
 - **[docs/design/2026-05-investigator-agent.md](docs/design/2026-05-investigator-agent.md)** — architecture rationale for Layer-2.
