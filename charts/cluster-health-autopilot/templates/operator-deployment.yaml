@@ -1,0 +1,142 @@
+{{- if .Values.operator.enabled }}
+# cha-operator — controller-runtime manager that reconciles
+# ClusterHealthAutopilot CRs into the watcher Deployment + diagnose /
+# remediate CronJobs + ServiceAccount. Phase 1b lifecycle manager
+# only — the probe / analyze / fix loop continues to run inside the
+# watcher Deployment (the `cha watch` binary).
+#
+# Existing chart-managed installs are NOT disturbed by this
+# Deployment running. The operator only takes over named resources
+# when an operator creates a ClusterHealthAutopilot CR.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "cha.operatorName" . }}-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cha.operatorName" . }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+rules:
+  # ClusterHealthAutopilot CR + status subresource.
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["clusterhealthautopilots"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["clusterhealthautopilots/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["clusterhealthautopilots/finalizers"]
+    verbs: ["update"]
+  # Managed children: ServiceAccount, Deployment, CronJob.
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Leader-election Lease (manager will create on startup).
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Events emission for kubectl describe + audit.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cha.operatorName" . }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cha.operatorName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cha.operatorName" . }}-sa
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cha.operatorName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+    cha.bionicaisolutions.com/role: operator
+spec:
+  replicas: {{ .Values.operator.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "cha.selectorLabels" . | nindent 6 }}
+      cha.bionicaisolutions.com/role: operator
+  template:
+    metadata:
+      labels:
+        {{- include "cha.selectorLabels" . | nindent 8 }}
+        cha.bionicaisolutions.com/role: operator
+    spec:
+      serviceAccountName: {{ include "cha.operatorName" . }}-sa
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: operator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ include "cha.pullPolicy" . }}
+          command:
+            - /cha-operator
+          args:
+            - --leader-elect=true
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+          env:
+            - name: MY_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
+            - containerPort: 8081
+              name: probes
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: probes
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: probes
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml (.Values.operator.resources | default dict) | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+{{- end }}

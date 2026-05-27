@@ -21,6 +21,7 @@
 package v1alpha1
 
 import (
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -28,6 +29,26 @@ import (
 var GroupVersion = schema.GroupVersion{
 	Group:   "cha.bionicaisolutions.com",
 	Version: "v1alpha1",
+}
+
+// SchemeBuilder collects the v1alpha1 types and exposes AddToScheme
+// for the manager to wire in. Using runtime.SchemeBuilder directly
+// (rather than controller-runtime's deprecated scheme.Builder) keeps
+// the api package free of controller-runtime imports — recommended
+// in the upstream guidance for v0.24+.
+var SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
+
+// AddToScheme adds the v1alpha1 types to the given Scheme. Called
+// from cmd/cha-operator/main.go so the manager can encode/decode
+// ClusterHealthAutopilot resources.
+var AddToScheme = SchemeBuilder.AddToScheme
+
+func addKnownTypes(scheme *runtime.Scheme) error {
+	scheme.AddKnownTypes(GroupVersion,
+		&ClusterHealthAutopilot{},
+		&ClusterHealthAutopilotList{},
+	)
+	return nil
 }
 
 // Resource takes an unqualified resource name and returns the

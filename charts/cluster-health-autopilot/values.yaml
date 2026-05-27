@@ -100,6 +100,18 @@ driftReport:
 # without first updating the chart.
 operator:
   installCRD: true
+  # Phase 1b (v1.8) — the cha-operator controller-runtime manager.
+  # Default OFF: existing chart-managed installs continue to work
+  # unchanged. Flip to true to deploy the operator binary; the
+  # operator only takes over resources named by a
+  # ClusterHealthAutopilot CR (which operators create explicitly),
+  # so enabling the operator without creating a CR is a no-op
+  # beyond having the manager pod running.
+  enabled: false
+  # Operator replicas. 1 is sufficient because the manager uses
+  # lease-based leader-election; additional replicas stand by.
+  replicas: 1
+  resources: {}
 
 # Vault-probe — closes the L1 stale-Ready window: queries Vault directly to
 # verify each ExternalSecret's referenced path + property still exists, BEFORE

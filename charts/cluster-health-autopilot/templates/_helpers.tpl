@@ -67,6 +67,14 @@ Remediator ClusterRole name.
 {{- end -}}
 
 {{/*
+Operator (cha-operator) workload name. Phase 1b — the controller-runtime
+manager that reconciles ClusterHealthAutopilot CRs.
+*/}}
+{{- define "cha.operatorName" -}}
+{{- printf "%s-operator" (include "cha.fullname" .) -}}
+{{- end -}}
+
+{{/*
 Image reference: <repo>:<tag>. Defaults tag to .Chart.AppVersion.
 */}}
 {{- define "cha.image" -}}
