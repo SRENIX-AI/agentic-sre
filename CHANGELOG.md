@@ -13,7 +13,44 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-(Reserve for v1.7+ work — operator port, cloud probe GCP/Azure clients, M2 trigger expansion.)
+(Reserve for v1.8+ work — config / capacity / security drift classes, GCP+Azure cloud probes, operator port.)
+
+---
+
+## [1.7.0] — 2026-05-27
+
+Drift-class expansion release. Closes Workstream B of the AI SRE positioning plan (`docs/design/2026-05-ai-sre-positioning.md`): the agent's investigation surface broadens from secret/credential drift to three additional classes that page oncall in practice.
+
+### Added — three new drift-class analyzers
+
+- **`GitOpsDrift`** (B1, [#69](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/pull/69)) — Argo CD `Application` out-of-sync / Degraded health + Flux `Kustomization` / `HelmRelease` Ready=False past grace. Reasons matching `*Failed` (BuildFailed, UpgradeFailed, InstallFailed) escalate to critical. 10-minute default grace period (controllers reconcile continuously). Reader ClusterRole extended with read on `argoproj.io/applications`, `kustomize.toolkit.fluxcd.io/kustomizations`, `helm.toolkit.fluxcd.io/helmreleases`. Default ON; flip `analyzers.gitopsDrift.enabled=false` on clusters without Argo/Flux. 15 unit tests.
+
+- **`WorkloadStateDrift`** (B2, [#70](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/pull/70)) — state-tier health drift the basic "X/Y ready" probe misses. CNPG cluster: non-healthy phase (warning, or critical if failover/failed), follower-degraded-while-phase-healthy (early signal), primary switchover stuck (critical, names both endpoints). StatefulSet ordinal-zero: pod-0 missing while other ordinals running (critical), pod-0 unready while higher ordinals Ready (warning). 5-minute default grace. Default ON; flip `analyzers.workloadStateDrift.enabled=false` to disable. 12 unit tests.
+
+- **`RBACDrift`** (B3, [#71](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/pull/71)) — RBAC posture changes that are audit-relevant. Wildcard verbs in user-defined Role/ClusterRole (warning) — skips system canonical roles (`cluster-admin`, `system:*`) and kube-system / kube-public / kube-node-lease namespaces. Unbound ServiceAccount mounted by a Pod (warning) — skips the `default` SA in every namespace + kube-system Pods. Remediation includes the exact `kubectl create rolebinding` command. Reader ClusterRole extended with read on `rbac.authorization.k8s.io/{roles,rolebindings,clusterroles,clusterrolebindings}` + `core/serviceaccounts`. Default ON; flip `analyzers.rbacDrift.enabled=false` to disable. 12 unit tests.
+
+### Added — chart wiring
+
+- New `analyzers.gitopsDrift.enabled` / `analyzers.workloadStateDrift.enabled` / `analyzers.rbacDrift.enabled` values (all default `true`)
+- New `cha.analyzerToggleEnv` chart helper emits `CHA_ANALYZER_<NAME>=off` env when an analyzer is disabled
+- Watcher Deployment + diagnose CronJob both pick up the helper
+
+### Demo
+
+- `demo/run-demo-v3.sh` (Workstream A4, [#68](https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/pull/68)) — sales/stakeholder walkthrough leading with the AI SRE agent flow rather than the OSS engine bootstrap. T0 narration → T1 fix proposer → T3 vault break-glass → JSONL audit. 510 lines, six narration sections.
+
+### Out of scope (deliberately deferred)
+
+- **Config drift** (CM hash divergence, CRD version mismatch, Helm release values vs cluster-live) — v1.8
+- **Capacity drift** (HPA min/max divergence, PVC growth trajectory, pod resource-request vs actual usage) — v1.8 (needs metrics-server integration)
+- **Security drift** (Pod Security Standards downgrade, image attestation, NetworkPolicy coverage gaps) — v1.8
+- **RBAC out-of-band edits** (annotation-vs-spec diff) — v1.8 (diff logic significantly more complex than wildcards / binding walks)
+- **GCP + Azure cloud probes** — v1.7+ (`pkg/cloud/{gcp,azure}` scaffolds in place)
+- **Operator port** (controller-runtime / kubebuilder) — v1.7+
+
+### Companion CHA-com release
+
+CHA-com v1.7.0 (separate repo) lands the C5 stretch: `LLMFixerMatcher` replaces the keyword `DefaultFixerMatcher` switch with an opt-in LLM classification call (`--ai-llm-fixer-matcher`). Same action_kind whitelist, but the decision of which fixer to invoke becomes LLM-driven. Falls back to keyword on LLM error / invalid response — worst case is identical to v1.6 behavior.
 
 ---
 
