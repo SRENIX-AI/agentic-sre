@@ -80,11 +80,13 @@ jobs:
           version: v3.16.0
 
       - name: Install helm-unittest plugin
-        # Pin to v0.5.0: newer helm-unittest plugin.yaml uses a
-        # `platformHooks` field that Helm 3.16 rejects with
-        # "unknown field". v0.5.0 has the same test surface and works
-        # with Helm 3.16+.
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v0.5.0
+        # Pinned to v1.0.3: last release whose plugin.yaml still uses
+        # the legacy `command:` field (Helm 3.16 rejects the
+        # `platformHooks` / `platformCommand` fields introduced in
+        # v1.1.0+ with "json: unknown field" errors). v1.0.3 supports
+        # the modern `rules[*].verbs[*]` glob assertion syntax used
+        # in our tests/rbac_test.yaml.
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.0.3
 
       - name: helm lint
         run: helm lint charts/cluster-health-autopilot
