@@ -183,6 +183,7 @@ var kindToResource = map[string]string{
 	"Deployment":            "deployments",
 	"ReplicaSet":            "replicasets",
 	"StatefulSet":           "statefulsets",
+	"DaemonSet":             "daemonsets",
 	"Job":                   "jobs",
 	"CronJob":               "cronjobs",
 	"ExternalSecret":        "externalsecrets",

@@ -1,8 +1,30 @@
-# Readiness Assessment — Cluster Health Autopilot v1.5.2
+# Readiness Assessment — Cluster Health Autopilot v1.6.0
 
 This document is the cha team's readiness assessment of the **current
-shipping release (v1.5.2)** for design-partner deployment and pilot
-customer use. Read alongside [ADVERSARIAL_ANALYSIS.md](./ADVERSARIAL_ANALYSIS.md).
+shipping release (v1.6.0)** for design-partner deployment and pilot
+customer use. Read alongside [ADVERSARIAL_ANALYSIS.md](./ADVERSARIAL_ANALYSIS.md)
+and [design/2026-05-final-adversarial-review.md](design/2026-05-final-adversarial-review.md).
+
+**v1.6.0 readiness delta vs v1.5.2.** Sprints 1-4 closed 22 of 23 items
+from the 2026-05-22 adversarial review (95%). The remaining item is
+the M2+ probe slice (Kong / HPA / ArgoCD / Velero) — roadmap-class,
+not credibility-class. Headline gains:
+
+- **Fixer safety**: all 4 default fixers (+1 opt-in) now consult GitOps
+  detection (Argo / Flux / Helm) and operator-intent gates (`spec.paused`,
+  `spec.suspend`) before mutating. Closes the fight-loop class.
+- **Probe coverage**: 6 net-new probes (NodePressure, DaemonSets,
+  PendingPods, CrashLoopBackOff, ETCD, FailedMounts). Total: 12 probes.
+- **Critical-workload list**: env + annotation auto-discovery —
+  Bionic-cluster defaults no longer required.
+- **HA**: Lease-based leader election. Two-replica deployments now
+  safe; the chart's `replicas: 1` default still works unchanged.
+- **AI safety (paid)**: patch-payload allow-list, independent investigation
+  budget, cold-start bucket mitigation, event-message secret scrubbing,
+  audit hash chain.
+- **Tests**: OSS `internal/fix/` 36→57; `internal/probe/` 0→70 (incl. 6
+  new probes); `internal/watcher/` 2→31. CHA-com 32→94. Chart-level
+  helm-unittest with 19 cases.
 
 The original [Vault → Pod Drift solution brief](./vault_pod_drift_solution_brief.docx.pdf)
 defined a five-layer detection stack (L1–L5). v0.2 closed all five gaps; v0.3

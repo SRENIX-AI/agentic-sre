@@ -1162,6 +1162,37 @@ richer free-form root-cause writeups for failure modes the rule-based version do
 cover. Design and rollout details: see
 [`docs/design/2026-05-investigator-agent.md`](design/2026-05-investigator-agent.md).
 
+### Sprint 2 — Per-probe opt-out env vars (v1.6.0)
+
+Each new probe is independently disablable via env var on the watcher
+Deployment (or CronJob, for diagnose/remediate). Set to `off`:
+
+| Env var | Disables |
+|---|---|
+| `CHA_PROBE_NODE_PRESSURE` | NodePressure probe |
+| `CHA_PROBE_DAEMONSETS` | System DaemonSets probe |
+| `CHA_PROBE_PENDING_PODS` | PendingPods probe |
+| `CHA_PROBE_CRASHLOOP` | Generic CrashLoopBackOff probe |
+| `CHA_PROBE_ETCD` | ETCD probe (use this for k3s / managed control plane) |
+| `CHA_PROBE_FAILED_MOUNTS` | FailedMounts probe |
+
+Critical-workloads list configuration (Sprint 2.6):
+
+| Env var | Effect |
+|---|---|
+| `CHA_CRITICAL_SERVICES` | Semicolon-separated `ns/selector\|Display` pairs; appended to compiled-in defaults |
+| `CHA_CRITICAL_SERVICES_REPLACE=true` | Replace defaults entirely (clusters with no Bionic services) |
+| Annotation `cha.bionicaisolutions.com/probe-critical: "true"` | On any Deployment / StatefulSet, opts it into the Services probe |
+| Annotation `cha.bionicaisolutions.com/probe-display: "..."` | Friendly display name for the annotated workload |
+
+Leader election (Sprint 4.3):
+
+| Env var | Effect |
+|---|---|
+| `CHA_LEADER_ELECTION=off` | Disable lease acquisition (single-pod dev / non-K8s) |
+| `MY_POD_NAMESPACE` | Lease namespace (downward-API; chart sets automatically) |
+| `MY_POD_NAME` | Lease holder identity (downward-API; chart sets automatically) |
+
 ### DriftReport CR change
 
 `DriftReport.spec.investigation` (string, maxLength 1024) carries the Investigator
@@ -1171,24 +1202,260 @@ field on the next watcher cycle.
 
 ---
 
+## 16. AWS cloud-probe setup (opt-in)
+
+CHA ships 10 AWS probes (RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC) that
+authenticate via [IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
+— the watcher ServiceAccount assumes a per-cluster IAM role. No long-lived
+AWS credentials in CHA.
+
+### Step 1 — Create the IAM policy
+
+Attach this minimum-permissions policy to a new IAM role (rename to match
+your tenant). The probes only read; no `*:Delete*`, `*:Put*`, `*:Create*`
+verbs are requested.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RDSRead",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusters",
+        "rds:DescribeDBSnapshots"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EC2EBSVPCRead",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVolumes",
+        "ec2:DescribeSnapshots",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeAvailabilityZones"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EKSRead",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeCluster",
+        "eks:DescribeNodegroup",
+        "eks:ListNodegroups",
+        "eks:DescribeAddon",
+        "eks:ListAddons"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IAMRead",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:ListRoles",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ALBRead",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ACMRead",
+      "Effect": "Allow",
+      "Action": ["acm:ListCertificates", "acm:DescribeCertificate"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "KMSRead",
+      "Effect": "Allow",
+      "Action": [
+        "kms:ListKeys",
+        "kms:DescribeKey",
+        "kms:GetKeyRotationStatus",
+        "kms:ListAliases"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3Read",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketPolicyStatus",
+        "s3:GetBucketAcl",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### Step 2 — IRSA trust policy
+
+Bind the role to the cha ServiceAccount via the cluster's OIDC provider:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/<OIDC_PROVIDER_HOST>"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "<OIDC_PROVIDER_HOST>:sub": "system:serviceaccount:cluster-health-autopilot:cha-cluster-health-autopilot-sa",
+          "<OIDC_PROVIDER_HOST>:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Step 3 — Enable in the Helm chart
+
+```yaml
+cloud:
+  aws:
+    enabled: true
+    region: us-east-1
+    roleArn: arn:aws:iam::123456789012:role/cha-cloud-readonly  # IRSA role
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/cha-cloud-readonly
+```
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reset-then-reuse-values \
+  -f aws-values.yaml
+```
+
+### Step 4 — Verify
+
+The watcher pod should log `cloud: aws enabled (region=us-east-1)` on startup,
+and the next diagnose cycle will include AWS sections in the report. If
+authentication fails, the AWS probes surface a single `cloud_aws/<service>/auth-failed`
+finding rather than crashing the diagnose cycle.
+
+### Non-AWS clusters
+
+CHA on GKE, AKS, bare-metal, k3s, etc. — leave `cloud.aws.enabled: false`
+(the chart's default). The cloud-probe layer is a complete no-op when no
+provider is enabled. **GCP and Azure equivalents are scoped for M2 (v1.7+);
+setting `--cloud-gcp-enabled` or `--cloud-azure-enabled` today errors at
+binary startup.**
+
+---
+
+## Upgrading from v1.5.x → v1.6.0
+
+Two operational gotchas worth knowing about:
+
+### `helm upgrade --reuse-values` no longer works for v1.6.0
+
+The v1.6.0 chart added new value blocks (`watcher.leaderElection`,
+`diagnose.backoffLimit`, `diagnose.activeDeadlineSeconds`,
+`remediation.backoffLimit`, `remediation.activeDeadlineSeconds`).
+Helm's `--reuse-values` flag carries *only* user-set values from the
+prior release; chart-default blocks fall back to nil and the
+templates panic. Use `--reset-then-reuse-values` (Helm 3.14+) instead:
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reset-then-reuse-values \
+  --set image.tag=v1.6.0
+```
+
+### Mutable tags + IfNotPresent — pin to a digest or use a unique tag
+
+If you push the same mutable tag (e.g. `latest`, `v1.6.0`) twice with
+different image content, the kubelet's `IfNotPresent` cache will use
+the stale digest. The v1.6.0 chart adds a `cha.pullPolicy` helper that
+detects mutable tags (`latest`, `*-latest`, `main`, `dev`) and forces
+`imagePullPolicy: Always`. Semver-style tags continue to use
+`IfNotPresent`. In production, prefer pinning the chart to an
+immutable tag or a digest reference.
+
+### New v1.6.0 capabilities
+
+After the upgrade, verify the new probes are firing:
+
+```sh
+kubectl exec -n cluster-health-autopilot \
+  deploy/cha-cluster-health-autopilot-watcher \
+  -- /usr/local/bin/cha diagnose --live --format text
+```
+
+Twelve probes should appear (Ceph / Postgres / Critical Services /
+Cluster Nodes / Storage Claims / External Endpoints **+ Node Pressure /
+System DaemonSets / Pending Pods / CrashLoopBackOff / ETCD / Failed
+Mounts**).
+
+The watcher pod will log lease acquisition on startup:
+```
+watcher: acquired lease cluster-health-autopilot/cha-watcher as "<pod-name>"
+```
+
+---
+
 ## Appendix — Key Helm values reference
 
 ```yaml
 image:
-  repository: docker4zerocool/cluster-health-autopilot   # Docker Hub
-  tag: ""         # defaults to Chart.appVersion (e.g. v1.5.2)
-  pullPolicy: IfNotPresent
-  pullSecrets: [] # [{name: dockerhub-pull-secret}]
+  # Docker Hub is the canonical publish target. GHCR mirror at
+  # ghcr.io/bionic-ai-solutions/cluster-health-autopilot is published by
+  # GoReleaser on every release for operators who prefer it.
+  repository: docker4zerocool/cluster-health-autopilot
+  tag: ""           # defaults to Chart.appVersion (e.g. v1.6.0)
+  pullPolicy: ""    # auto: Always for mutable tags, IfNotPresent for semver
+  pullSecrets: []   # [{name: dockerhub-pull-secret}]
 
 diagnose:
   enabled: true
   schedule: "0 9 * * *"
-  format: daily   # daily | text | json
+  format: daily              # daily | text | json
+  backoffLimit: 1            # v1.6: cap Job retries (K8s default was 6)
+  activeDeadlineSeconds: 120 # v1.6: cap Job wall-clock (K8s default was unlimited)
 
 remediation:
   enabled: false
   schedule: "*/30 * * * *"
   dryRun: false
+  backoffLimit: 1            # v1.6
+  activeDeadlineSeconds: 120 # v1.6
+
+# Sprint 4.3 — Lease-based leader election. Default on so multi-replica
+# watcher deployments are safe. Disable for single-pod dev / non-K8s runs.
+watcher:
+  leaderElection:
+    enabled: true
+    leaseName: cha-watcher
+    leaseDuration: 30s
+    renewDeadline: 20s
+    retryPeriod: 5s
 
 fixers:
   # Opt-in OSS fixer added in v1.3. When true:
@@ -1269,6 +1536,94 @@ securityContext:
   capabilities:
     drop: ["ALL"]
 ```
+
+---
+
+## 17. CHA-com paid binary — install on top of OSS
+
+The OSS chart templates an **approval-server** Deployment under
+`approval.enabled=true`. That Deployment runs the paid CHA-com binary
+(`cha-com approval-server`), which provides the AI-tier approval
+webhook + Ed25519 signing flow. The OSS engine continues to handle
+probes / analyzers / fixers; the paid binary is a *sidecar* that
+augments alerts with AI features.
+
+### Step 1 — Generate the approval signing key
+
+```sh
+# Run once, persists into a K8s Secret the chart references.
+kubectl create namespace cluster-health-autopilot --dry-run=client -o yaml | kubectl apply -f -
+kubectl run cha-com-keygen \
+  --namespace cluster-health-autopilot \
+  --image=docker4zerocool/cha-com:v1.0.0 \
+  --restart=Never \
+  --command -- /usr/local/bin/cha-com gen-signing-key \
+    --secret-namespace=cluster-health-autopilot \
+    --secret-name=cha-com-signing-key
+kubectl delete pod cha-com-keygen -n cluster-health-autopilot
+```
+
+### Step 2 — Enable approval-server in Helm values
+
+```yaml
+approval:
+  enabled: true
+  image:
+    repository: docker4zerocool/cha-com
+    tag: v1.0.0
+  signingKey:
+    secretName: cha-com-signing-key
+  baseURL: https://cha-approve.example.com   # external URL operators see
+ai:
+  enabled: true
+  tier: t0      # t0 / t1 / t2 / t3 / off
+  endpoint: https://gpu-ai.example.com/v1   # OpenAI-compatible
+  model: qwen3.6-35b-a3b-fp8                # in-cluster vLLM recommended
+  apiKey:
+    secretName: cha-com-llm-key
+    secretKey:  api-key
+```
+
+### Step 3 — Helm upgrade
+
+```sh
+helm upgrade cha cha/cluster-health-autopilot \
+  --namespace cluster-health-autopilot \
+  --reset-then-reuse-values \
+  -f cha-com-values.yaml
+```
+
+The watcher pod starts emitting AI-enriched DriftReports; the
+approval-server pod handles signed click-to-fix URLs.
+
+### What's shipped today vs roadmap
+
+CHA-com v1.0.0 ships:
+
+- **Approval-server with Ed25519 signing + JTI replay protection** (real)
+- **`gen-signing-key`** utility (real)
+- **Paid catalog plumbing** — `PaidBoundaryAnalyzer` boundary-check today;
+  real paid analyzers ship in G2 increments
+- **AI tier code** in `ai/` package (enricher, fix-proposer, planner, vault-runbook, audit hash-chain) — used by the approval-server; the `cha-com diagnose/watch` subcommands that drive T0–T4 enrichment in-process are G3 work, not yet wired into the binary's CLI surface
+
+See [`docs/design/2026-05-cha-com-publishing-gap.md`](design/2026-05-cha-com-publishing-gap.md) for the
+G1/G2/G3 work breakdown.
+
+---
+
+## Appendix — GHCR package visibility (one-time setup)
+
+OSS GoReleaser publishes to both Docker Hub and GHCR on every release.
+The first push to GHCR creates the package as **private** by default. To
+make it pullable by non-org-members:
+
+1. Open https://github.com/orgs/Bionic-AI-Solutions/packages/container/cluster-health-autopilot/settings
+2. Under "Danger Zone" → "Change package visibility" → **Public**
+3. Repeat for `cha-com` package once the first CHA-com release publishes
+
+This is a one-time step per package — subsequent releases inherit the
+visibility setting. Docker Hub images are public-by-default and don't
+need this step.
 
 ---
 

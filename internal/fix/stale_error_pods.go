@@ -75,6 +75,32 @@ func (StaleErrorPods) Run(ctx context.Context, src snapshot.Source, m snapshot.M
 			continue
 		}
 
+		// GitOps gate: don't delete a Failed pod that's reconciled by Argo
+		// CD, Flux, or Helm — either directly on the pod (rare; debug pods
+		// tracked by Argo) or via its owning Job (common; CI pipelines).
+		// Best-effort fetch of the Job; if it's not in the snapshot we
+		// can't evaluate, so proceed (orphan pods are garbage anyway).
+		if reason := GitOpsReason(pod); reason != "" {
+			r.Skipped = append(r.Skipped, SkipReason{
+				Object: object,
+				Reason: "GitOps-managed: " + reason + " — let the controller handle the failed pod",
+			})
+			continue
+		}
+		if len(owners) > 0 && owners[0].Kind == "Job" {
+			job, err := src.Get(ctx, snapshot.GVRJob, ns, owners[0].Name)
+			if err == nil {
+				if reason := GitOpsReason(*job); reason != "" {
+					r.Skipped = append(r.Skipped, SkipReason{
+						Object: object,
+						Reason: "owning Job " + ns + "/" + owners[0].Name +
+							" is GitOps-managed: " + reason + " — let the controller surface the failure",
+					})
+					continue
+				}
+			}
+		}
+
 		if err := m.Delete(ctx, snapshot.GVRPod, ns, name); err != nil {
 			r.Skipped = append(r.Skipped, SkipReason{
 				Object: object,

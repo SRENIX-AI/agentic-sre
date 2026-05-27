@@ -25,6 +25,8 @@ import (
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/catalog"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/anonymize"
+	cloudimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud"
+	awsimpl "github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/cloud/aws"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
@@ -33,6 +35,8 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/summarize"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/vault"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/watcher"
+	cloudpkg "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
+	cloudpkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing/openproject"
 	"github.com/spf13/cobra"
 )
@@ -435,6 +439,17 @@ func watchCmd() *cobra.Command {
 		ticketingWebURLPrefix   string
 		ticketingLabels         []string
 		ticketingDryRun         bool
+
+		// Cloud probe flags
+		cloudAWSEnabled          bool
+		cloudAWSRegion           string
+		cloudGCPEnabled          bool
+		cloudGCPProject          string
+		cloudAzureEnabled        bool
+		cloudAzureSubscriptionID string
+		cloudIncludeCloud        bool
+		cloudExcludeCloud        bool
+		cloudCadence             time.Duration
 	)
 	c := &cobra.Command{
 		Use:   "watch",
@@ -514,6 +529,32 @@ the post-fix cluster state.`,
 				return terr
 			}
 
+			// Cloud probe source. --exclude-cloud wins over per-provider
+			// flags so operators can quickly disable cloud probes for
+			// debugging or rate-limit fire drills.
+			cloudOn := !cloudExcludeCloud && (cloudIncludeCloud || cloudAWSEnabled || cloudGCPEnabled || cloudAzureEnabled)
+			var cloudSrc cloudpkg.Source
+			if cloudOn {
+				src, cerr := buildCloudSource(cmd.Context(), cloudOpts{
+					AWSEnabled:          cloudAWSEnabled && !cloudExcludeCloud,
+					AWSRegion:           cloudAWSRegion,
+					GCPEnabled:          cloudGCPEnabled && !cloudExcludeCloud,
+					GCPProject:          cloudGCPProject,
+					AzureEnabled:        cloudAzureEnabled && !cloudExcludeCloud,
+					AzureSubscriptionID: cloudAzureSubscriptionID,
+				})
+				if cerr != nil {
+					return cerr
+				}
+				cloudSrc = src
+				// Register cloud-OSS probes only when at least one provider is configured.
+				catalog.RegisterCloudOSS(reg,
+					cloudAWSEnabled && !cloudExcludeCloud,
+					cloudGCPEnabled && !cloudExcludeCloud,
+					cloudAzureEnabled && !cloudExcludeCloud,
+				)
+			}
+
 			cfg := watcher.Config{
 				Debounce:     debounce,
 				ResyncPeriod: resyncPeriod,
@@ -530,9 +571,27 @@ the post-fix cluster state.`,
 				AlertmanagerURL:        alertmanagerURL,
 				ClusterName:            clusterName,
 				Ticketing:              ticketingCfg,
+				CloudSource:            cloudSrc,
+				CloudCadence:           cloudCadence,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
-			return w.Run(ctx)
+			// Sprint 4.3 — wrap Run in leader election. When the env says
+			// off, LeaderConfig.Disabled is set and the body runs straight
+			// through.
+			leaderDisabled := os.Getenv("CHA_LEADER_ELECTION") == "off" ||
+				os.Getenv("CHA_LEADER_ELECTION") == "false" ||
+				os.Getenv("CHA_LEADER_ELECTION") == "0"
+			leaderCfg := watcher.LeaderConfig{Disabled: leaderDisabled}
+			if !leaderDisabled {
+				cs, err := snapshot.BuildKubeClientset(kubeconfig)
+				if err != nil {
+					return fmt.Errorf("leader election: %w", err)
+				}
+				leaderCfg.Clientset = cs
+			}
+			return watcher.RunWithLeader(ctx, leaderCfg, func(leaderCtx context.Context) error {
+				return w.Run(leaderCtx)
+			})
 		},
 	}
 	c.Flags().BoolVar(&live, "live", false, "Run against the live cluster (required)")
@@ -563,7 +622,74 @@ the post-fix cluster state.`,
 	c.Flags().StringVar(&ticketingWebURLPrefix, "ticketing-web-url-prefix", os.Getenv("TICKETING_WEB_URL_PREFIX"), "OpenProject web base URL (e.g. https://op.example.com) — used to build operator-clickable TicketRef.URL")
 	c.Flags().StringSliceVar(&ticketingLabels, "ticketing-labels", []string{"cha", "auto-filed"}, "Labels appended to ticket descriptions for filtering")
 	c.Flags().BoolVar(&ticketingDryRun, "ticketing-dry-run", false, "Log intended ticketing operations without calling the MCP server")
+
+	// Cloud probe flags. Per the design (docs/design/2026-05-cloud-probe-framework.md)
+	// each cloud has its own enable + region/project/subscription identifier;
+	// --include-cloud / --exclude-cloud are operator overrides.
+	c.Flags().BoolVar(&cloudAWSEnabled, "cloud-aws-enabled", envBool("CLOUD_AWS_ENABLED", false), "Enable AWS cloud probes (RDS in M1; EBS/EKS/IAM/ALB/ACM/KMS/S3/VPC follow). Requires AWS auth via IRSA, assume-role, or static creds.")
+	c.Flags().StringVar(&cloudAWSRegion, "cloud-aws-region", os.Getenv("CLOUD_AWS_REGION"), "AWS region for cloud probes (e.g. us-east-1). Required when --cloud-aws-enabled.")
+	c.Flags().BoolVar(&cloudGCPEnabled, "cloud-gcp-enabled", envBool("CLOUD_GCP_ENABLED", false), "Enable GCP cloud probes (M2 — not shipped yet)")
+	c.Flags().StringVar(&cloudGCPProject, "cloud-gcp-project", os.Getenv("CLOUD_GCP_PROJECT"), "GCP project ID for cloud probes")
+	c.Flags().BoolVar(&cloudAzureEnabled, "cloud-azure-enabled", envBool("CLOUD_AZURE_ENABLED", false), "Enable Azure cloud probes (M2 — not shipped yet)")
+	c.Flags().StringVar(&cloudAzureSubscriptionID, "cloud-azure-subscription-id", os.Getenv("CLOUD_AZURE_SUBSCRIPTION_ID"), "Azure subscription ID for cloud probes")
+	c.Flags().BoolVar(&cloudIncludeCloud, "include-cloud", false, "Force-enable cloud probes even when per-provider flags are off (uses defaults)")
+	c.Flags().BoolVar(&cloudExcludeCloud, "exclude-cloud", false, "Force-disable cloud probes regardless of per-provider flags (debugging / rate-limit fire drill)")
+	c.Flags().DurationVar(&cloudCadence, "cloud-cadence", 10*time.Minute, "Minimum interval between cloud-probe runs. Cloud probes don't fire on K8s events.")
+
 	return c
+}
+
+type cloudOpts struct {
+	AWSEnabled          bool
+	AWSRegion           string
+	GCPEnabled          bool
+	GCPProject          string
+	AzureEnabled        bool
+	AzureSubscriptionID string
+}
+
+// buildCloudSource assembles a cloud.Source from per-provider CLI flags.
+// Returns nil when no provider is configured. AWS uses aws-sdk-go-v2's
+// default credential chain (env → shared → IRSA → EC2/ECS metadata)
+// so in-cluster IRSA "just works" via the Helm-injected SA annotation.
+// GCP and Azure stubs return an error in M1; they will land in M2.
+func buildCloudSource(ctx context.Context, o cloudOpts) (cloudpkg.Source, error) {
+	var awsClient cloudpkgaws.Client
+	if o.AWSEnabled {
+		if o.AWSRegion == "" {
+			return nil, fmt.Errorf("--cloud-aws-region required when --cloud-aws-enabled")
+		}
+		c, err := awsimpl.NewLiveClient(ctx, o.AWSRegion)
+		if err != nil {
+			return nil, fmt.Errorf("build AWS live client: %w", err)
+		}
+		awsClient = c
+	}
+	if o.GCPEnabled {
+		return nil, fmt.Errorf("gcp cloud probes land in M2 (cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
+	}
+	if o.AzureEnabled {
+		return nil, fmt.Errorf("azure cloud probes land in M2 (cluster-health-autopilot/docs/design/2026-05-cloud-probe-framework.md)")
+	}
+	if awsClient == nil {
+		return nil, nil
+	}
+	return cloudimpl.NewSource(awsClient, nil, nil, cloudpkg.ModeLive), nil
+}
+
+// envBool reads an env var as bool; empty / unparseable returns dflt.
+func envBool(key string, dflt bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return dflt
+	}
+	switch v {
+	case "1", "true", "TRUE", "True", "yes", "YES":
+		return true
+	case "0", "false", "FALSE", "False", "no", "NO":
+		return false
+	}
+	return dflt
 }
 
 type ticketingOpts struct {
@@ -579,9 +705,18 @@ type ticketingOpts struct {
 // Returns an empty config (Sink == nil) when --ticketing-provider is empty —
 // the watcher then no-ops the ticketing path. Currently supports
 // "openproject"; Jira and ServiceNow plug in here in CHA-com.
+//
+// Sprint 4.2 — required-flag validation. When --ticketing-provider is set,
+// the per-provider required flags are checked up-front and any missing
+// value returns an error here, BEFORE the watcher boots. Previously the
+// validator was silent: a misconfigured tenant ID could land in the
+// sink and only surface at first-ticket time as a 404 from the provider.
 func buildTicketingConfig(o ticketingOpts) (report.TicketingConfig, error) {
 	if o.Provider == "" {
 		return report.TicketingConfig{}, nil
+	}
+	if err := validateTicketingOpts(o); err != nil {
+		return report.TicketingConfig{}, err
 	}
 	switch o.Provider {
 	case "openproject":
@@ -615,6 +750,31 @@ func buildTicketingConfig(o ticketingOpts) (report.TicketingConfig, error) {
 		}, nil
 	default:
 		return report.TicketingConfig{}, fmt.Errorf("unsupported ticketing provider %q (OSS supports: openproject)", o.Provider)
+	}
+}
+
+// validateTicketingOpts enforces required-flag combinations per provider.
+// Returns a descriptive error naming the missing flag so an operator can
+// fix their args without going to the source.
+//
+// API-key presence is NOT required by this validator: in-cluster ClusterIP
+// traffic to an MCP server typically bypasses Kong key-auth (Kong enforces
+// auth only on external Ingress paths). Operators who do need auth can
+// either set $TICKETING_MCP_API_KEY explicitly or wire it via the Helm
+// chart's ticketing.auth.* block. A missing key only surfaces when the MCP
+// server rejects the request, with a clear 401/403 in the watcher log.
+func validateTicketingOpts(o ticketingOpts) error {
+	switch o.Provider {
+	case "openproject":
+		if o.MCPURL == "" {
+			return fmt.Errorf("--ticketing-provider=openproject requires --ticketing-mcp-url (or $TICKETING_MCP_URL)")
+		}
+		if o.ProjectID == "" {
+			return fmt.Errorf("--ticketing-provider=openproject requires --ticketing-project")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported ticketing provider %q (OSS supports: openproject)", o.Provider)
 	}
 }
 

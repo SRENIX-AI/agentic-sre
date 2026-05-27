@@ -118,7 +118,7 @@ neither CHA-com nor the LLM ever see.
 | Data class | OSS engine has | Sent to LLM? |
 |---|---|---|
 | Diagnostic struct | yes | YES (redacted) |
-| K8s event messages | yes (in analyzers) | **NO** — too prompt-injection-prone |
+| K8s event messages | yes (in analyzers) | **Scrubbed via `pkg/ai.RedactEvents` (Sprint 3.4) — identifiers + secret-shaped substrings (AWS keys, Vault hvs.*, JWTs, GitHub PATs, Slack tokens) replaced with `[REDACTED]` before the Layer-2 investigator sees them.** The same redaction now applies to `Diagnostic.Message` so analyzers that copy event text into Findings can't leak secrets through that path either. |
 | Pod logs | no | **NO** |
 | Secret bytes | no (CHA never reads) | **NO** |
 | Secret key NAMES | yes | YES (already in Diagnostic message) |

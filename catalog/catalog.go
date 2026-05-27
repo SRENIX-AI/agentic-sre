@@ -37,18 +37,58 @@ import (
 )
 
 // RegisterOSS adds all built-in OSS-tier probes, analyzers, and fixers to r.
+//
+// Sprint 2 added six new probes covering the K8s health blind-spots the
+// hardcoded Services target list missed: node pressure, system DaemonSets,
+// stuck Pending pods, generic CrashLoopBackOff, ETCD members, and failed
+// volume mounts. Each is independently disablable via CHA_PROBE_<NAME>=off.
 func RegisterOSS(r *registry.Registry) {
+	// Services-probe targets: the compiled-in defaults remain the baseline
+	// (backward-compat for the Bionic cluster the project was built on),
+	// merged with anything supplied via CHA_CRITICAL_SERVICES env or the
+	// cha.bionicaisolutions.com/probe-critical annotation. Operators with
+	// non-Bionic clusters override via the env to replace the default set.
+	servicesTargets := probe.DefaultTargets()
+	if extra := probe.TargetsFromEnv(os.Getenv("CHA_CRITICAL_SERVICES")); len(extra) > 0 {
+		if os.Getenv("CHA_CRITICAL_SERVICES_REPLACE") == "true" {
+			servicesTargets = extra
+		} else {
+			servicesTargets = append(servicesTargets, extra...)
+		}
+	}
+
 	r.RegisterProbe(
 		probe.Ceph{},
 		probe.Nodes{},
 		probe.Postgres{},
 		probe.PVCs{},
-		probe.Services{Targets: probe.DefaultTargets()},
+		probe.Services{Targets: servicesTargets},
 		probe.NewEndpoints(
 			probe.DefaultEndpointTargets(),
 			probe.DefaultDiscoveryOptions(),
 		),
 	)
+
+	// Sprint 2 probes — opt-out via env so a cluster with weird shape can
+	// silence individual probes without forking.
+	if os.Getenv("CHA_PROBE_NODE_PRESSURE") != "off" {
+		r.RegisterProbe(probe.NodePressure{})
+	}
+	if os.Getenv("CHA_PROBE_DAEMONSETS") != "off" {
+		r.RegisterProbe(probe.DaemonSets{})
+	}
+	if os.Getenv("CHA_PROBE_PENDING_PODS") != "off" {
+		r.RegisterProbe(probe.PendingPods{})
+	}
+	if os.Getenv("CHA_PROBE_CRASHLOOP") != "off" {
+		r.RegisterProbe(probe.CrashLoopBackOff{})
+	}
+	if os.Getenv("CHA_PROBE_ETCD") != "off" {
+		r.RegisterProbe(probe.ETCD{})
+	}
+	if os.Getenv("CHA_PROBE_FAILED_MOUNTS") != "off" {
+		r.RegisterProbe(probe.FailedMounts{})
+	}
 	r.RegisterAnalyzer(
 		diagnose.SecretKeyMissing{},
 		diagnose.FailingExternalSecrets{},

@@ -243,6 +243,17 @@ The validator rejects:
 - `PatchPayload` set when `action_kind` ≠ `PatchDeployment`
 - `Tier` value that doesn't allow proposals (T0/off)
 
+**Patch shape validation (Sprint 3.1).** Beyond the closed-enum
+`ActionKind` whitelist, the `PatchDeployment` payload itself is
+allow-listed by JSON-path. The only permitted patch path is
+`spec.template.metadata.annotations.kubectl.kubernetes.io/restartedAt`.
+Anything else — replicas, selector, container images, env vars,
+additional annotations — returns `ErrPatchForbidden` at admission.
+Payload size capped at 64 KiB; the restart-annotation value capped
+at 256 characters. Closes the StatefulSet-replicas-zero data-loss
+vector from the 2026-05-22 threat model. Source:
+[`CHA-com/ai/approval/patch_validator.go`](../../CHA-com/ai/approval/patch_validator.go).
+
 **Click flow** (with audit checkpoints):
 ```
 SRE clicks → JWT verify → MarkUsed (replay protection) → audit:granted
@@ -263,6 +274,27 @@ SRE clicks → JWT verify → MarkUsed (replay protection) → audit:granted
 allowed up to capacity; sustained rate ~1 fix per 12 min. Operators
 with chatty incident environments can raise via
 `ai.rateLimit.actionsPerHour`.
+
+**Investigation rate limit (Sprint 3.2).** Layer-2 LLM-backed
+investigation calls have an independent budget
+(`ai.rateLimit.investigationsPerHour`, default 10) keyed on
+diagnostic class. Without this, a flapping workload could uncapped-
+burn investigations at ~144/day per resource. Per-class overrides
+via `ai.rateLimit.perInvestigationClass`. Source:
+[`CHA-com/ai/rate_limit.go`](../../CHA-com/ai/rate_limit.go).
+
+**Cold-start mitigation (Sprint 3.3).** New rate-limit buckets
+initialize at 0 tokens by default rather than full capacity.
+Operators who can't extract a free burst on each pod restart. Set
+`ai.rateLimit.coldStartFull: true` if you need the legacy
+burst-on-startup behavior.
+
+**Tamper-evident audit (Sprint 3.6).** Wrapping any `AuditSink` in
+`ChainedSink` (from `CHA-com/ai/audit/`) appends `prev_hash` and
+`entry_hash` fields to each event's Details. `VerifyChain([]Event)`
+walks the chain and returns the first broken-link index — detecting
+content mutation, reordering, and insertion/deletion. Layer over an
+append-only Vault audit device for full tamper resistance.
 
 ### T2 — Approved multi-step plan
 

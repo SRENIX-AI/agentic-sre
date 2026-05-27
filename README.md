@@ -4,6 +4,24 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 
 > **Pre-launch — engineering preview.** This README will be the public face on launch day; treat its current contents as draft.
 
+## Status (v1.6.0 — 2026-05-25)
+
+| Capability | Status |
+|---|---|
+| K8s probes (12) — Ceph, Postgres, Nodes, PVCs, Critical services, Endpoints, NodePressure, DaemonSets, PendingPods, CrashLoopBackOff, ETCD, FailedMounts | ✅ shipped |
+| Diagnose analyzers (8) — secret/cert/ESO/image-pull/TLS classes | ✅ shipped |
+| Fixers (4 default + 1 opt-in) with GitOps + paused + suspended + cert-mgr-health safety gates | ✅ shipped |
+| AWS cloud probes (10) — RDS, EBS, EKS, IAM, ALB, ACM, KMS, S3, VPC + IRSA | ✅ shipped |
+| Helm chart (v1.6.0) with leader election, configurable workloads, narrow RBAC | ✅ shipped |
+| OpenProject ticketing sink (OSS), Slack 3-channel routing, Alertmanager | ✅ shipped |
+| Layer-2 rule-based Investigator (OSS) | ✅ shipped |
+| GCP cloud probes | ⏳ roadmap (M2 / v1.7+) — `--cloud-gcp-enabled` errors at startup today |
+| Azure cloud probes | ⏳ roadmap (M2 / v1.7+) — `--cloud-azure-enabled` errors at startup today |
+| CHA-com paid binary v1.0.0 (approval-server, Ed25519 signing, gen-signing-key, paid catalog plumbing) — published at `docker4zerocool/cha-com:1.0.0` | ✅ shipped (G1 closed) |
+| Four paid-tier analyzers (G2 closed): `VaultPathDriftPro` (1.0.1), `CertificateChainAnomaly` (1.0.2), `MultiClusterDrift` (1.0.3), `StatefulSetReplicaPressure` (1.0.4) | ✅ shipped |
+| Paid AI tiers (T0–T3) — code lives in `ai/` package; T0–T4 in-process enrichment wired into a `cha-com diagnose/watch` CLI surface | ⏳ G3 (next sprint) — see [`docs/design/2026-05-cha-com-publishing-gap.md`](docs/design/2026-05-cha-com-publishing-gap.md) |
+| Operator port (controller-runtime / kubebuilder) | ⏳ roadmap (Sprint 5 / v1.7) |
+
 ---
 
 ## What it does
@@ -72,16 +90,25 @@ helm install cha cha/cluster-health-autopilot \
 
 Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-autopilot) — published at `https://bionic-ai-solutions.github.io/cluster-health-autopilot/`.
 
-## What it checks (probes)
+## What it checks (12 probes)
 
-- Distributed storage health (Ceph)
-- Database health (CloudNativePG, Zalando Spilo/Patroni — auto-detected)
-- Critical workloads (configurable list, counted by `READY` column not `phase=Running`)
-- Cluster nodes
-- PVC binding state
-- API connectivity sanity (so transient API problems become a reported `PROBE_FAILED`, not a silent green light)
+K8s cluster:
+- **Ceph storage** — health, capacity, OSD readiness
+- **PostgreSQL** — CloudNativePG + Zalando Spilo/Patroni, auto-detected
+- **Critical workloads** — configurable list (32 Bionic defaults + `CHA_CRITICAL_SERVICES` env + `cha.bionicaisolutions.com/probe-critical: "true"` annotation auto-discovery)
+- **Cluster Nodes** — Ready condition
+- **PVC binding** — Bound vs Pending
+- **External endpoints** — Ingress host auto-discovery + flake suppression (Layer-1)
+- **Node pressure** *(v1.6)* — DiskPressure / MemoryPressure / PIDPressure / NetworkUnavailable; DiskPressure auto-escalates to Critical
+- **System DaemonSets** *(v1.6)* — kube-system / cilium-system / calico-system / kube-flannel / rook-ceph / longhorn-system / openebs / metallb-system
+- **Pending pods** *(v1.6)* — `PodScheduled=False` past 60s grace; reason-aware remediation (Insufficient CPU/Memory, unbound PVC, taint mismatch, nodeSelector)
+- **Generic CrashLoopBackOff** *(v1.6)* — any namespace; protected-NS escalates to Critical immediately, user-NS escalates past restart threshold (default 10)
+- **ETCD** *(v1.6)* — kubeadm-style static-pod etcd; honest "blind probe" Warning on external/managed etcd rather than false-greening
+- **Failed mounts** *(v1.6)* — joins pods stuck `ContainerCreating` with kubelet `FailedMount` / `FailedAttachVolume` / `ProvisioningFailed` events
 
-## What it diagnoses (7 OSS analyzers — read-only)
+Each probe can be disabled independently via `CHA_PROBE_<NAME>=off`.
+
+## What it diagnoses (8 OSS analyzers — read-only)
 
 - **SecretKeyMissing** — pod stuck in `CreateContainerConfigError`; names the missing key + consuming Deployment + owning ExternalSecret.
 - **FailingExternalSecrets** — walks every ExternalSecret with `Ready=False`, surfaces the controller's specific error message (the missing Vault property name).
@@ -90,8 +117,24 @@ Full Helm chart at [`charts/cluster-health-autopilot/`](charts/cluster-health-au
 - **ImagePullAuth** — pod in `ImagePullBackOff` with kubelet event auth signals (401, denied, unauthorized).
 - **CertExpiry** — cert-manager Certificate not Ready, expiring within 14 days, or already expired.
 - **TLSSecretMismatch** — Ingress points at an expired Secret while cert-manager is renewing a healthy cert into a different Secret in the same namespace. (Two-Secret naming drift.)
+- **VaultPathMissing** — Apache-2.0 source ships in OSS; requires you to construct a Vault client and register it explicitly (`reg.RegisterAnalyzer(diagnose.VaultPathMissing{Client: vc})`). Queries Vault directly to catch drift before ESO's next refresh marks `Ready=False`. The paid CHA Enterprise binary auto-wires this from your Vault configuration.
 
-Plus **VaultPathMissing** in the paid catalog — queries Vault directly to catch drift before ESO's next refresh marks `Ready=False`.
+## What it checks in your cloud account (AWS — opt-in)
+
+Enable with `--aws-enabled` (or `cloudProbes.aws.enabled: true` in Helm values). The probes use the standard AWS SDK credential chain (IRSA, instance profile, env vars). 10 probes ship today:
+
+- **RDS** — instance/cluster status, storage, multi-AZ, backup retention drift
+- **EBSVolumes** — orphan/unattached, snapshot age
+- **EKSControlPlane** — version skew vs. node groups, addon staleness
+- **EKSNodeGroups** — capacity, scaling activity, version drift
+- **IAMRoles** — trust policy drift on cluster service-account roles
+- **ALBTargetHealth** — unhealthy targets in Load Balancer Controller-managed TGs
+- **ACMCertExpiry** — certs expiring within 14 days
+- **KMSKeys** — pending-deletion keys still referenced by cluster resources
+- **S3BucketPublicAccess** — public-ACL drift on buckets referenced by cluster IAM
+- **VPCSubnets** — exhausted IP space affecting pod CIDR allocation
+
+GCP and Azure probes are scoped for the M2 milestone of the cloud-probe roadmap; see [`docs/design/2026-05-cloud-probe-framework.md`](docs/design/2026-05-cloud-probe-framework.md).
 
 ## What it auto-fixes (whitelisted)
 
@@ -116,10 +159,11 @@ The OSS catalog ships a deterministic, rule-based Investigator covering TLS expi
 
 ## Architecture
 
-- One CronJob, one ConfigMap (the script), one ServiceAccount, two ClusterRoles.
-- Container image: `kubectl + bash + jq + curl` (no proprietary registry).
-- Webhook: ExternalSecret from Vault — no plaintext credentials in any manifest.
-- <100 MB RAM, <100 ms CPU, <60 s wall-clock per run.
+- Two CronJobs (diagnose + remediate), one ServiceAccount, three ClusterRoles (reader, remediator, driftreport). An optional long-running Watcher Deployment and an Approval Server are deployed when their features are enabled.
+- Container image: a single `cha` Go binary (~30 MB) on `gcr.io/distroless/static:nonroot`. No shell, no package manager, no proprietary registry. Built via the [Dockerfile](Dockerfile) at the repo root.
+- Credentials: ExternalSecret from Vault wherever possible — no plaintext credentials baked into any manifest.
+- Footprint: ~30 MB RSS, sub-second CPU, <60 s wall-clock per probe-and-fix cycle.
+- See [`docs/READINESS.md`](docs/READINESS.md) for pilot-vs-production limits, RBAC blast-radius notes, and known operational caveats.
 
 ## Docs
 
@@ -136,7 +180,7 @@ The OSS catalog ships a deterministic, rule-based Investigator covering TLS expi
 
 [Apache License 2.0](LICENSE) for the engine and the default signature library.
 
-The **Verified Signature Library** (curated, regression-tested patterns added monthly) ships as a separate signed bundle under a commercial license. See [LICENSE-VERIFIED-LIBRARY.md] *(to be added before public launch)*.
+The **Verified Signature Library** (curated, regression-tested patterns added monthly) ships as a separate signed bundle under a commercial subscription license to CHA Enterprise customers. See [`LICENSE-VERIFIED-LIBRARY.md`](LICENSE-VERIFIED-LIBRARY.md) for the terms.
 
 ## Security
 
@@ -144,4 +188,10 @@ To report a vulnerability, email **cha-security@baisoln.com**. See [SECURITY.md]
 
 ## Roadmap
 
-See [/home/skadam/.claude/plans/i-have-been-adviced-hashed-lecun.md] for the WS-A → WS-D rollout plan.
+Active design docs live in [`docs/design/`](docs/design/):
+
+- [Hardening plan (Sprints 0–4)](docs/design/2026-05-hardening-plan.md) — TDD-driven punch-list closing the 2026-05 adversarial review
+- [Trigger expansion roadmap (v1.6 → v2.0)](docs/design/2026-05-trigger-expansion-roadmap.md) — Kong, GPU, HPA, ArgoCD, Velero, Vault, log-pattern probes
+- [Cloud probe framework](docs/design/2026-05-cloud-probe-framework.md) — AWS shipped, GCP/Azure in M2
+- [Investigator agent](docs/design/2026-05-investigator-agent.md) — Layer-2 architecture rationale
+- [Ticketing MCP integration](docs/design/2026-05-ticketing-mcp-integration.md) — OpenProject + MCP transport

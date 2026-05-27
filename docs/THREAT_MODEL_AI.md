@@ -73,6 +73,7 @@ schema enforcement.
 | Closed-enum `ActionKind` whitelist | `pkg/ai/types.go:ActionKind`, `IsValid()` | `pkg/ai/validate_test.go:TestActionKindIsValid` (8 cases, 5 valid + 3 rejected) |
 | Re-validation at executor entry | `ai/approval/executor.go:Execute` calls `p.Validate()` before any Mutator call | `ai/approval/server_test.go` (executor failure path) |
 | Markdown fence stripping prevents prompt-leakage attacks via `\`\`\`json` | `ai/enricher.go:parseEnrichmentResponse`, `ai/fix_proposer.go:parseProposerResponse` | `ai/enricher_test.go:TestEnricher_HandlesMarkdownFences` |
+| **Patch-payload allow-list (v1.6 / Sprint 3.1)** — closed-enum ActionKind gates verbs; this gates *shape*. `PatchDeployment` permits exactly `spec.template.metadata.annotations.kubectl.kubernetes.io/restartedAt`; everything else (replicas, selector, container images, immutable fields, additional annotations, oversized payloads) returns `ErrPatchForbidden`. Closes the StatefulSet-replicas-zero data-loss vector. | `CHA-com/ai/approval/patch_validator.go` | `CHA-com/ai/approval/patch_validator_test.go` (10 cases) |
 
 **Layer-2 Investigator (v1.5)** (this is the row that maps most
 directly to "Improper Output Handling" in the 2025 OWASP rename):
@@ -118,6 +119,8 @@ the LLM endpoint budget or rate limit.
 | Control | Where | Validated by |
 |---|---|---|
 | Token-bucket rate limiter per tier | `ai/rate_limit.go:RateLimiter` | `ai/rate_limit_test.go` (capacity, refill, per-tier override) |
+| **Independent investigation budget (v1.6 / Sprint 3.2)** — `TakeInvestigation(class)` keyed on `(approver, diagnostic_class)` with default 10/hour. Previously the proposal budget gated `Take(tier)` but Layer-2 investigations had no separate ceiling; a flapping workload could uncapped-burn ~144 investigations/day per resource. | `CHA-com/ai/rate_limit.go::TakeInvestigation` | `CHA-com/ai/rate_limit_test.go::TestTakeInvestigation_*` (4 cases) |
+| **Cold-start mitigation (v1.6 / Sprint 3.3)** — new buckets initialize at 0 tokens, not full capacity, so a pod-restart attacker can't extract a free `ActionsPerHour`-sized burst on each restart. `ColdStartFull: true` re-enables legacy burst behavior for stable, long-running deployments. | `CHA-com/ai/rate_limit.go::newScopedBucket` | `CHA-com/ai/rate_limit_test.go::TestColdStart_*` (3 cases) |
 | Circuit breaker tripping at N consecutive failures | `ai/circuit_breaker.go` | `ai/circuit_breaker_test.go` (4 cases) |
 | Response cache keyed by (system prompt + user message + model) | `ai/client/cache.go:CachingClient` | `ai/client/cache_test.go` (7 cases) |
 | Cycle-wide enrichment timeout | `internal/watcher/enrich.go:enrichmentTimeout` (default 30s) | `internal/watcher/enrich_test.go:TestEnrichDiagnostics_ContextCancellation` |
@@ -178,6 +181,9 @@ under the OWASP 2025 LLM10 rename — see also LLM10 below):
 | Vault values never read; only key NAMES via `vault.Client.ListKeys` | `internal/vault/client.go` | Existing OSS posture (v0.2 forward) |
 | Internal hostnames hashed, .svc/.local suffix preserved as type signal | `pkg/ai/redact.go:redactHost` | `pkg/ai/redact_test.go:TestRedactText_InternalHosts` |
 | Cluster domain → `<cluster>` placeholder | `pkg/ai/redact.go:clusterDomainRE` | `pkg/ai/redact_test.go:TestRedactText_ClusterDomain` |
+| **Event-message scrubbing (v1.6 / Sprint 3.4)** — `RedactEvents` applies identifier redaction PLUS secret-heuristic substitution (AWS access keys, Vault `hvs.*` tokens, JWTs, GitHub PATs, Slack tokens, long base64/hex) to Kubernetes event `.Message` fields before they reach the Layer-2 LLM-backed investigator. Wired into `LiveEnvironment.GetEvents`. | `pkg/ai/redact.go:RedactEvents`, `internal/investigator/env_live.go:GetEvents` | `pkg/ai/redact_test.go::TestRedactEventMessage_*` and `TestRedactEvents_*` (7 cases) |
+| **`Diagnostic.Message` secret-heuristic scrub (v1.6 / Sprint 3.4b)** — analyzers that copy event text into a Diagnostic's Message field now also pass through the secret-heuristic substitution via the same `redactText` helper. Closes the leak path where an analyzer captures a kubelet event verbatim. | `pkg/ai/redact.go:redactText` (extended) | `pkg/ai/redact_test.go::TestRedactDiagnostic_ScrubsSecretsInMessage`, `TestRedactDiagnostic_ScrubsSecretsInRemediation` |
+| **Audit-trail tamper evidence (v1.6 / Sprint 3.6)** — `ChainedSink` wraps any `AuditSink` and embeds `prev_hash` + `entry_hash` SHA-256 fields. `VerifyChain` walks the chain and returns the first broken-link index — detecting content mutation, reordering, and insertion/deletion. Not a signing scheme (tamper *evidence*, not resistance); layer over an append-only Vault audit device for full resistance. | `CHA-com/ai/audit/hash_chain.go` | `CHA-com/ai/audit/hash_chain_test.go` (7 cases) |
 
 **Layer-2 Investigator (v1.5)**:
 

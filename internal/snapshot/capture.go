@@ -33,6 +33,8 @@ var CaptureGVRs = []schema.GroupVersionResource{
 	GVREvent,
 	GVRDeployment,
 	GVRReplicaSet,
+	GVRStatefulSet,
+	GVRDaemonSet,
 	GVRJob,
 	GVRCronJob,
 	GVRExtSecret,
