@@ -108,6 +108,43 @@ spec:
                     name:
                       type: string
                       maxLength: 253
+                    cloud:
+                      type: object
+                      description: |
+                        Set when this drift is about a cloud-provider
+                        resource (AWS RDS, GCP Cloud SQL, Azure SQL,
+                        etc.) — populated by pkg/cloud probes. Mutually
+                        exclusive with the K8s fields above (a drift
+                        targets either a K8s object OR a cloud resource,
+                        not both).
+                      properties:
+                        provider:
+                          type: string
+                          description: aws | gcp | azure
+                          enum: ["aws", "gcp", "azure"]
+                        region:
+                          type: string
+                          description: |
+                            Cloud region or location (e.g. "us-east-1",
+                            "us-central1", "eastus"). Empty for global
+                            resources (IAM, KMS).
+                          maxLength: 64
+                        service:
+                          type: string
+                          description: |
+                            Cloud service identifier (e.g. "rds", "ebs",
+                            "eks", "iam", "alb", "acm", "kms", "s3",
+                            "vpc"; "cloudsql", "gke", "lb"; "sql",
+                            "aks", "appgw", "keyvault").
+                          maxLength: 64
+                        id:
+                          type: string
+                          description: |
+                            Cloud-provider resource identifier. Format
+                            varies by provider: AWS uses ARN or short
+                            id, GCP uses project/zone/name, Azure uses
+                            /subscriptions/.../resourceGroups/...
+                          maxLength: 512
             status:
               type: object
               properties:

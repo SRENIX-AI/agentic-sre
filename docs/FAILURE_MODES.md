@@ -1,10 +1,13 @@
 # Failure-Mode Catalog
 
 The default catalog (v1.5.2) covers **four default auto-fixers + one opt-in**
-and **seven OSS analyzers** (plus `VaultPathMissing` in the paid catalog).
-Each is a separate Go function with a published unit-test corpus under
-[`internal/`](../internal/). The "real example" column is a real incident from
-the cluster the product was built on.
+and **eight OSS analyzers**. All analyzer source code ships under Apache 2.0.
+`VaultPathMissing` requires a constructed Vault client to register — the OSS
+ships it unwired (you supply the client); the paid CHA Enterprise binary
+auto-wires it from your Vault configuration. Each is a separate Go function
+with a published unit-test corpus under [`internal/`](../internal/). The
+"real example" column is a real incident from the cluster the product was
+built on.
 
 Since v1.5, every CRITICAL finding also passes through a **Layer-2 Investigator**
 (rule-based in OSS, optional LLM-backed in CHA-com) that attaches a root-cause
@@ -25,6 +28,7 @@ Each fixer is gated by the **Mutator interface** at the type-system level: `snap
 | **Root cause class** | Manual `kubectl debug` leftovers, `kubectl run --restart=Never` scratch pods, Job pods that crashed without a retry policy. The pod IS terminal — its presence in listings is just visual noise, but it skews `Pods/cluster` metrics and clutters incident reviews. |
 | **What it does** | Filters pods to `status.phase == "Failed"`, owned by a Job or unowned. Skips RS/Deployment/StatefulSet/DaemonSet-owned pods (let the controller recover). Skips protected namespaces. Calls `pods.delete`. |
 | **Why it's safe** | Job-owned pods that were going to retry already have a successor; the dead one is a tombstone. Unowned pods don't have a controller to recover them — they're already lost. The only "data loss" is one pod's container logs, which the Job retains via `backoffLimit`. |
+| **Safety gates (v1.6)** | Skips when the pod itself or its owning Job carries an Argo / Flux / Helm GitOps annotation — let the controller surface the failure instead. Best-effort: if the Job isn't in the snapshot, proceed (orphan Failed pods are garbage). |
 | **Real example** | 3× `node-debugger-gpu-*` pods stuck in `Error` for 11–12 days from a node debug session that was never cleaned up. Caught and removed on the first tick of the bash-version predecessor; would be the same outcome with this fixer. |
 | **Source** | [`internal/fix/stale_error_pods.go`](../internal/fix/stale_error_pods.go) |
 
@@ -36,6 +40,7 @@ Each fixer is gated by the **Mutator interface** at the type-system level: `snap
 | **Root cause class** | Someone updated the CronJob template to reference a Secret key that was renamed (case mismatch, ESO refactor). The CronJob template is correct *now*, but the in-flight Job's pod template is **immutable** — Kubernetes never rewrites it. The Job retries CreateContainer forever. |
 | **What it does** | Finds pods in CCE with kubelet event message containing "couldn't find key", confirms the parent is a Job whose owner is a still-existing CronJob, calls `jobs.delete` on the frozen Job. The CronJob's next scheduled tick spawns a fresh Job using the corrected template. Skips Jobs without a CronJob owner — one-off Jobs deserve human attention. |
 | **Why it's safe** | Deleting the Job kills the dead pod and lets the cron schedule do its thing. The Job's history is gone, but the Job had been failing anyway — there was no successful run to lose. |
+| **Safety gates (v1.6)** | Fetches the parent CronJob and refuses on `spec.suspend=true` (an operator's deliberate freeze) or `GitOpsReason != ""` (Argo / Flux / Helm reconciles the template). Both are tracked in `deletedJobs` so multi-pod jobs emit one skip. |
 | **Real example** | `gpu-docker-monitor` cron's Slack-webhook Secret got renamed `webhook-url` → `WEBHOOK_URL`. The frozen Job retried for **26 days** before being caught. With this fixer wired, it would be resolved on the next tick after the rename. |
 | **Source** | [`internal/fix/stuck_jobs.go`](../internal/fix/stuck_jobs.go) |
 
@@ -47,6 +52,7 @@ Each fixer is gated by the **Mutator interface** at the type-system level: `snap
 | **Root cause class** | A transient condition that has since cleared (image pull retry, scheduler quirk) prevented the new pod from starting at the moment of the rollout, and the ReplicaSet hasn't retried because `progressDeadlineSeconds` hasn't fired. |
 | **What it does** | Detects a CCE pod owned by a ReplicaSet whose `revision` annotation differs from the live Deployment's `revision`. Patches the Deployment template's `kubectl.kubernetes.io/restartedAt` annotation — the same patch `kubectl rollout restart` produces. Kubernetes spawns a new ReplicaSet, the old wedged one ages out. **Refuses** to restart when the failure is "couldn't find key" — rollout would reproduce the same error against the same Secret; that needs human action and is handled by the analyzer below. |
 | **Why it's safe** | `kubectl rollout restart` is the standard SRE remedy for stuck rollouts; the patched annotation is the documented mechanism. Kubernetes itself decides which pods get replaced and in what order. |
+| **Safety gates (v1.6)** | Refuses when the Deployment carries an Argo / Flux / Helm GitOps annotation (the controller would revert the restart annotation and lock CHA in a fight loop) OR when `spec.paused=true` (an operator deliberately froze rollouts). The shared `internal/fix.GitOpsReason()` helper handles the GitOps detection across all fixers. |
 | **Real example** | `frontend-deploy` revision 7 stuck because revision 6's pod template had a different env layout that took longer than `progressDeadlineSeconds=600` to converge. Manual `kubectl rollout restart` from on-call cleared it; this fixer does the same automatically when the revision diff says it's safe. |
 | **Source** | [`internal/fix/stuck_rs_pods.go`](../internal/fix/stuck_rs_pods.go) |
 
@@ -58,6 +64,7 @@ Each fixer is gated by the **Mutator interface** at the type-system level: `snap
 | **Root cause class** | Transient ACME failure (rate limit, DNS-01 propagation slowness, account-key rotation) that the CR captured permanently. cert-manager creates one CR per renewal attempt — once a CR is terminally failed, the next renewal cycle stalls behind it. |
 | **What it does** | Filters CertificateRequest CRs to terminally-failed states (`Ready=False` with `reason=Failed`, or `status.failureTime` set). Filters ACME Orders to `state=errored` or `state=invalid`. Calls `certificaterequests.delete` / `orders.delete`. cert-manager recreates the CR within seconds and retries. |
 | **Why it's safe** | The fixer only touches **terminally-failed** CRs — never pending or in-progress issuance. cert-manager's recovery model is "delete the failed CR; I'll make a new one" — this fixer just automates that step. No private-key material is touched (Secrets are untouched). |
+| **Safety gates (v1.6)** | Probes the `cert-manager` namespace for the controller Deployment; if it's captured and reports `readyReplicas=0`, short-circuits with a Skipped entry. cert-manager can't recreate CRs in that state, so deletion would just nuke the diagnostic evidence without retry. Falls through to pre-v1.6 behavior when the Deployment is absent from the snapshot. |
 | **Real example** | `dashboard-baisoln-com-tls` Certificate showed `Ready=False` for 11 hours because a CertificateRequest from the previous renewal hit an ACME rate-limit and never cleared. Once deleted, cert-manager issued a fresh CR and renewed within 90 seconds. |
 | **Source** | [`internal/fix/stuck_cert_requests.go`](../internal/fix/stuck_cert_requests.go) |
 
@@ -208,6 +215,75 @@ Hard contract:
 - **Disable with `CHA_INVESTIGATOR=off`** (env var on the watcher Deployment).
 
 Design rationale in [`docs/design/2026-05-investigator-agent.md`](design/2026-05-investigator-agent.md).
+
+---
+
+## D. Probes (added in v1.6; read-only; surface findings on health degradation)
+
+Six new probes shipped in v1.6 to close the cluster-health blind spots that
+the original 6-probe set didn't cover. Each is independently disablable via
+the env vars listed below.
+
+### D1. `NodePressure`
+
+| | |
+|---|---|
+| **Symptom** | Nodes show `Ready=True` but `kubectl top node` indicates near-exhaustion; kubelet starts evicting pods minutes later with no warning. |
+| **Root cause class** | The basic Nodes probe only checks the `Ready` condition. The four pressure conditions (DiskPressure, MemoryPressure, PIDPressure, NetworkUnavailable) flip independently and warn before Ready goes False. Ignoring them is how slow-burn resource exhaustion turns into a sudden cluster-wide eviction storm. |
+| **What it does** | Walks node status.conditions, surfaces any with status=True. DiskPressure and NetworkUnavailable auto-escalate to Critical (eviction or broken pod traffic imminent). MemoryPressure and PIDPressure stay Warning. |
+| **Why it's read-only** | Pressure conditions cannot be patched by CHA — the node hardware / kernel has to free up the resource. The probe's value is *visibility*, not action. |
+| **Disable** | `CHA_PROBE_NODE_PRESSURE=off` |
+| **Source** | [`internal/probe/node_pressure.go`](../internal/probe/node_pressure.go) |
+
+### D2. `DaemonSets`
+
+| | |
+|---|---|
+| **Symptom** | Workloads stay Ready but pod-to-pod traffic fails; new mounts hang; the cluster *feels* broken without a clear pod-level failure. |
+| **Root cause class** | A broken CNI (Cilium, Calico, Flannel) / CSI plugin (rook-ceph, longhorn) / kube-proxy pod silently starves the cluster. Nodes flip Ready=False eventually but the kubelet often keeps them Ready for minutes after the underlying daemon dies. |
+| **What it does** | Inspects DaemonSets in eight system namespaces (`kube-system`, `cilium-system`, `calico-system`, `kube-flannel`, `rook-ceph`, `longhorn-system`, `openebs`, `metallb-system`). Flags when `numberReady < desiredNumberScheduled` on any DS that has `desiredNumberScheduled > 0`. Intentionally-idle DSes (zero desired) are not flagged. |
+| **Disable / customize** | `CHA_PROBE_DAEMONSETS=off`, or set `SystemNamespaces` via catalog override. |
+| **Source** | [`internal/probe/daemonsets.go`](../internal/probe/daemonsets.go) |
+
+### D3. `PendingPods`
+
+| | |
+|---|---|
+| **Symptom** | `kubectl get pods -A` shows pods stuck in `Pending` indefinitely; the scheduler is silent in events because it ran once, declared the cluster unschedulable, and gave up. |
+| **Root cause class** | Cluster capacity exhausted, taints/tolerations mismatch, PVC unbound, nodeSelector matches nothing. The pod just sits there. |
+| **What it does** | Pods with `phase=Pending` AND `conditions[type=PodScheduled].status=False` past a 60s grace window. Skips `ImagePullBackOff` (owned by the existing `ImagePullAuth` analyzer). Reason-aware remediation distinguishes Insufficient CPU/Memory, unbound PVC, taint mismatch, nodeSelector miss. |
+| **Disable** | `CHA_PROBE_PENDING_PODS=off` |
+| **Source** | [`internal/probe/pending_pods.go`](../internal/probe/pending_pods.go) |
+
+### D4. `CrashLoopBackOff`
+
+| | |
+|---|---|
+| **Symptom** | A random Deployment in a random namespace is in a crash loop, and the operator only notices when a downstream feature breaks. |
+| **Root cause class** | Bad config, missing dependency, OOM, broken liveness probe. The existing `Services` probe only watches workloads on the hardcoded critical-services list — anything outside that list crashes silently. |
+| **What it does** | Generic crash-loop detector for *any* namespace. Inspects both regular and init containers. Protected-namespace pods (kube-system, etc.) are always Critical. User-namespace pods are Warning by default; escalate to Critical past the restart threshold (default 10, configurable). Recovered pods (currently Running, even with high historical restart count) are not flagged. |
+| **Disable / customize** | `CHA_PROBE_CRASHLOOP=off`, or set `CriticalRestartThreshold` via catalog override. |
+| **Source** | [`internal/probe/crashloop.go`](../internal/probe/crashloop.go) |
+
+### D5. `ETCD`
+
+| | |
+|---|---|
+| **Symptom** | Kubernetes API responds, control plane *looks* healthy, but etcd is the canary nobody's watching. |
+| **Root cause class** | etcd member down (disk full, slow fsync, OOM), quorum at risk, leader churn. |
+| **What it does** | Watches kubeadm-style static-pod etcd members in `kube-system` (matched by `component=etcd` label OR `etcd-<node>` name prefix). Any `Ready=False` or `restartCount > 0` is Critical. For external etcd (managed services, k3s sqlite, etc.) the probe **honestly reports Warning ("probe is blind")** rather than false-greening. |
+| **Disable / customize** | `CHA_PROBE_ETCD=off`. Set `Namespace` via catalog override for non-`kube-system` installs. |
+| **Source** | [`internal/probe/etcd.go`](../internal/probe/etcd.go) |
+
+### D6. `FailedMounts`
+
+| | |
+|---|---|
+| **Symptom** | Pods stuck in `ContainerCreating` forever; the PVCs probe shows the PVC as Bound. |
+| **Root cause class** | PVC is bound but the kubelet can't attach or mount: CSI controller pod unhealthy, NFS export changed permissions, rook-ceph OSD readiness, storage backend out-of-quota. |
+| **What it does** | Joins Pods with `phase=Pending` + `ContainerCreating` waiting state, past a 90s grace window, with their kubelet `FailedMount` / `FailedAttachVolume` / `FailedDetachVolume` / `ProvisioningFailed` events. Reason-aware remediation. |
+| **Disable** | `CHA_PROBE_FAILED_MOUNTS=off` |
+| **Source** | [`internal/probe/failed_mounts.go`](../internal/probe/failed_mounts.go) |
 
 ---
 

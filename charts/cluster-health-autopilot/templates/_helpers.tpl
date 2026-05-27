@@ -75,6 +75,28 @@ Image reference: <repo>:<tag>. Defaults tag to .Chart.AppVersion.
 {{- end -}}
 
 {{/*
+Effective pull policy: Always for mutable tags (latest / -latest suffix /
+empty + AppVersion that happens to be a dev marker), IfNotPresent for
+release-style semver tags. Overridable via .Values.image.pullPolicy when
+set explicitly.
+
+Closes the operational gotcha from v1.6.0 deployment: pushing the same
+mutable tag twice with different content silently kept the kubelet-
+cached digest. Always-pull on mutable tags makes the chart safe for
+operators who don't enforce immutable-tag discipline upstream.
+*/}}
+{{- define "cha.pullPolicy" -}}
+{{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
+{{- if .Values.image.pullPolicy -}}
+{{- .Values.image.pullPolicy -}}
+{{- else if or (eq $tag "latest") (hasSuffix "-latest" $tag) (eq $tag "main") (eq $tag "dev") -}}
+Always
+{{- else -}}
+IfNotPresent
+{{- end -}}
+{{- end -}}
+
+{{/*
 Slack env blocks — one helper per channel.
 Each returns a list of env entries (NOT wrapped in `env:` block) so callers
 can compose with their own env definitions.

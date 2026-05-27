@@ -12,9 +12,26 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+// BuildKubeClientset constructs a typed kubernetes.Interface using the
+// same kubeconfig resolution rules as LoadLive. Used by leader-election
+// (which needs the typed coordination.k8s.io/v1 client) and by any other
+// caller that needs typed access alongside the dynamic Live source.
+func BuildKubeClientset(kubeconfigPath string) (kubernetes.Interface, error) {
+	cfg, err := buildConfig(kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("load kubeconfig: %w", err)
+	}
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("typed clientset: %w", err)
+	}
+	return cs, nil
+}
 
 // Live is a Source backed by a Kubernetes API server.
 //

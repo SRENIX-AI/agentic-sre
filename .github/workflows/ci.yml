@@ -67,3 +67,35 @@ jobs:
         with:
           version: v2.12.0
           args: --timeout=5m
+
+  chart-test:
+    name: helm lint + unittest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false
+
+      - name: helm lint
+        run: helm lint charts/cluster-health-autopilot
+
+      - name: helm unittest
+        run: helm unittest charts/cluster-health-autopilot
+
+      - name: helm template smoke (default values)
+        run: helm template foo charts/cluster-health-autopilot > /tmp/rendered.yaml && wc -l /tmp/rendered.yaml
+
+      - name: helm template smoke (watcher + remediation + leader election)
+        run: |
+          helm template foo charts/cluster-health-autopilot \
+            --set watcher.enabled=true \
+            --set remediation.enabled=true \
+            --set watcher.leaderElection.enabled=true \
+            > /tmp/rendered-full.yaml
+          wc -l /tmp/rendered-full.yaml

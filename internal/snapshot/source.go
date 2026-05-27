@@ -46,6 +46,7 @@ var (
 	GVRDeployment  = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 	GVRReplicaSet  = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"}
 	GVRStatefulSet = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}
+	GVRDaemonSet   = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}
 	GVRJob         = schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}
 	GVRCronJob     = schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}
 	GVRExtSecret   = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "externalsecrets"}

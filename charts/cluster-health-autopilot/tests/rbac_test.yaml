@@ -1,0 +1,32 @@
+suite: RBAC narrow-surface invariants
+templates:
+  - templates/clusterrole-reader.yaml
+  - templates/clusterrole-remediator.yaml
+tests:
+  - it: reader role is read-only (no write verbs)
+    template: templates/clusterrole-reader.yaml
+    asserts:
+      - notMatchRegex:
+          path: rules[*].verbs[*]
+          pattern: "^(create|update|patch|delete|deletecollection)$"
+
+  - it: remediator role never patches Secrets
+    template: templates/clusterrole-remediator.yaml
+    set:
+      remediation.enabled: true
+    asserts:
+      - notContains:
+          path: rules[*].resources
+          content: secrets
+
+  - it: remediator does not declare wildcards
+    template: templates/clusterrole-remediator.yaml
+    set:
+      remediation.enabled: true
+    asserts:
+      - notMatchRegex:
+          path: rules[*].resources[*]
+          pattern: "^\\*$"
+      - notMatchRegex:
+          path: rules[*].verbs[*]
+          pattern: "^\\*$"

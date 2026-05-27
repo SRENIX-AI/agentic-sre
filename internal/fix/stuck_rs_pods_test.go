@@ -196,3 +196,112 @@ func TestStuckRSPods_ProtectedNamespace(t *testing.T) {
 		t.Errorf("expected protected-namespace skip; got: %+v", r.Skipped)
 	}
 }
+
+// argoManagedDeployment has the live revision (matches what stuckRSPod's
+// owning RS doesn't) AND an argocd.argoproj.io/instance annotation. CHA
+// must refuse to roll-restart it — Argo will revert the restart annotation
+// on the next reconcile cycle, locking CHA and Argo into a fight loop.
+const argoManagedDeployment = `{
+  "apiVersion": "apps/v1", "kind": "Deployment",
+  "metadata": {
+    "name": "frontend",
+    "namespace": "demo",
+    "annotations": {
+      "deployment.kubernetes.io/revision": "7",
+      "argocd.argoproj.io/instance": "frontend-app"
+    }
+  }
+}`
+
+// pausedDeployment has the live revision and spec.paused=true. A paused
+// rollout means an operator deliberately froze updates; forcing a restart
+// violates that intent.
+const pausedDeployment = `{
+  "apiVersion": "apps/v1", "kind": "Deployment",
+  "metadata": {
+    "name": "frontend",
+    "namespace": "demo",
+    "annotations": {"deployment.kubernetes.io/revision": "7"}
+  },
+  "spec": {"paused": true}
+}`
+
+// fluxManagedDeployment is owned by Flux via the kustomize.toolkit label.
+const fluxManagedDeployment = `{
+  "apiVersion": "apps/v1", "kind": "Deployment",
+  "metadata": {
+    "name": "frontend",
+    "namespace": "demo",
+    "labels": {"kustomize.toolkit.fluxcd.io/name": "apps-kustomization"},
+    "annotations": {"deployment.kubernetes.io/revision": "7"}
+  }
+}`
+
+func TestStuckRSPods_SkipsArgoManagedDeployment(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"pods.json":   stuckRSPod,
+		"rs.json":     oldRS,
+		"deploy.json": argoManagedDeployment,
+	})
+	m := newFakeMutator()
+	r := StuckRSPods{}.Run(context.Background(), src, m)
+
+	if len(r.Actions) != 0 {
+		t.Errorf("Argo-managed Deployment must not be patched, got Actions=%+v", r.Actions)
+	}
+	if len(m.calls) != 0 {
+		t.Errorf("expected zero mutator calls, got %v", m.calls)
+	}
+	foundGitOps := false
+	for _, s := range r.Skipped {
+		if strings.Contains(s.Reason, "GitOps-managed") && strings.Contains(s.Reason, "argocd") {
+			foundGitOps = true
+		}
+	}
+	if !foundGitOps {
+		t.Errorf("expected GitOps-managed skip naming argocd; got: %+v", r.Skipped)
+	}
+}
+
+func TestStuckRSPods_SkipsFluxManagedDeployment(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"pods.json":   stuckRSPod,
+		"rs.json":     oldRS,
+		"deploy.json": fluxManagedDeployment,
+	})
+	m := newFakeMutator()
+	r := StuckRSPods{}.Run(context.Background(), src, m)
+
+	if len(r.Actions) != 0 {
+		t.Errorf("Flux-managed Deployment must not be patched, got Actions=%+v", r.Actions)
+	}
+	if len(m.calls) != 0 {
+		t.Errorf("expected zero mutator calls, got %v", m.calls)
+	}
+}
+
+func TestStuckRSPods_SkipsPausedDeployment(t *testing.T) {
+	src := loadSrc(t, map[string]string{
+		"pods.json":   stuckRSPod,
+		"rs.json":     oldRS,
+		"deploy.json": pausedDeployment,
+	})
+	m := newFakeMutator()
+	r := StuckRSPods{}.Run(context.Background(), src, m)
+
+	if len(r.Actions) != 0 {
+		t.Errorf("paused Deployment must not be rolled, got Actions=%+v", r.Actions)
+	}
+	if len(m.calls) != 0 {
+		t.Errorf("expected zero mutator calls, got %v", m.calls)
+	}
+	foundPaused := false
+	for _, s := range r.Skipped {
+		if strings.Contains(s.Reason, "paused") {
+			foundPaused = true
+		}
+	}
+	if !foundPaused {
+		t.Errorf("expected 'paused' skip reason; got: %+v", r.Skipped)
+	}
+}

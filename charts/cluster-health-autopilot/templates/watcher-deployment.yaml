@@ -47,7 +47,7 @@ spec:
       containers:
         - name: cha
           image: {{ include "cha.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          imagePullPolicy: {{ include "cha.pullPolicy" . }}
           args:
             - watch
             - --live
@@ -115,7 +115,37 @@ spec:
             - --ticketing-dry-run
             {{- end }}
             {{- end }}
+            {{- if .Values.cloud.enabled }}
+            - --cloud-cadence={{ .Values.cloud.cadence | default "10m" }}
+            {{- if .Values.cloud.aws.enabled }}
+            - --cloud-aws-enabled
+            - --cloud-aws-region={{ required "cloud.aws.region required when cloud.aws.enabled" .Values.cloud.aws.region }}
+            {{- end }}
+            {{- if .Values.cloud.gcp.enabled }}
+            - --cloud-gcp-enabled
+            - --cloud-gcp-project={{ required "cloud.gcp.project required when cloud.gcp.enabled" .Values.cloud.gcp.project }}
+            {{- end }}
+            {{- if .Values.cloud.azure.enabled }}
+            - --cloud-azure-enabled
+            - --cloud-azure-subscription-id={{ required "cloud.azure.subscriptionId required when cloud.azure.enabled" .Values.cloud.azure.subscriptionId }}
+            {{- end }}
+            {{- end }}
           env:
+            # Downward-API for leader election (Sprint 4.3) — the
+            # LeaderConfig reads these to construct the lease holder
+            # identity and namespace.
+            - name: MY_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- if not .Values.watcher.leaderElection.enabled }}
+            - name: CHA_LEADER_ELECTION
+              value: "off"
+            {{- end }}
             {{- include "cha.slackAlertsEnv" . | nindent 12 }}
             {{- include "cha.slackCriticalEnv" . | nindent 12 }}
             {{- include "cha.vaultEnv" . | nindent 12 }}
