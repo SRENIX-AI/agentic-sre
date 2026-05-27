@@ -80,7 +80,9 @@ jobs:
           version: v3.16.0
 
       - name: Install helm-unittest plugin
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false
+        # --verify was removed from `helm plugin install` (Helm >= 3.16);
+        # plugins are no longer required to sign.
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest
 
       - name: helm lint
         run: helm lint charts/cluster-health-autopilot
