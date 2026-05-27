@@ -61,6 +61,16 @@ rules:
   - apiGroups: ["acme.cert-manager.io"]
     resources: ["orders", "challenges"]
     verbs: ["get", "list", "watch"]
+  # RBACDrift analyzer (v1.7) — walks Role/RoleBinding/ClusterRole/
+  # ClusterRoleBinding/ServiceAccount cluster-wide to detect wildcard
+  # verbs in user-defined roles + unbound ServiceAccounts mounted by
+  # Pods. Read-only by design.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch"]
   # IngressCoverage analyzer — reads all Ingress rules cluster-wide to detect
   # hostnames that have no endpoint probe. Read-only; no write verbs needed.
   - apiGroups: ["networking.k8s.io"]

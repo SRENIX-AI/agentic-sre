@@ -98,15 +98,17 @@ func RegisterOSS(r *registry.Registry) {
 		diagnose.CertExpiry{},
 		diagnose.TLSSecretMismatch{},
 	)
-	// v1.7 drift-class expansion (Workstreams B1+B2). Each opt-out
+	// v1.7 drift-class expansion (Workstreams B1+B2+B3). Each opt-out
 	// via env var on clusters that don't host the targeted asset
-	// class (Argo/Flux CRDs, CNPG, StatefulSets) and the operator
-	// wants to silence the no-target list cycle.
+	// class and the operator wants to silence the no-target list cycle.
 	if os.Getenv("CHA_ANALYZER_GITOPS_DRIFT") != "off" {
 		r.RegisterAnalyzer(diagnose.GitOpsDrift{})
 	}
 	if os.Getenv("CHA_ANALYZER_WORKLOAD_STATE_DRIFT") != "off" {
 		r.RegisterAnalyzer(diagnose.WorkloadStateDrift{})
+	}
+	if os.Getenv("CHA_ANALYZER_RBAC_DRIFT") != "off" {
+		r.RegisterAnalyzer(diagnose.RBACDrift{})
 	}
 	r.RegisterFixer(
 		fix.StaleErrorPods{},

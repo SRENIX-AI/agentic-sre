@@ -425,7 +425,7 @@ gatekeeper:
       - external-secrets
       - cnpg-system
 
-# Drift-class analyzers added in v1.7 (Workstreams B1+B2 from the
+# Drift-class analyzers added in v1.7 (Workstreams B1+B2+B3 from the
 # AI SRE positioning plan). Default to ON so existing installs get
 # the new signal automatically; flip individual entries to false on
 # clusters that don't host the targeted asset class.
@@ -443,6 +443,13 @@ analyzers:
     # primary switchover stuck; StatefulSet ordinal-zero stuck.
     # Goes deeper than the basic "X/Y ready" probe. Set to false
     # on clusters that don't host CNPG and don't run StatefulSets.
+    enabled: true
+  rbacDrift:
+    # RBAC drift — wildcard-verb roles + unbound ServiceAccounts
+    # mounted by Pods. Skips system canonical roles (cluster-admin,
+    # system:*) and the default SA in every namespace. Set to false
+    # if your cluster's RBAC posture is managed entirely by an
+    # upstream IaC system that wildcard-grants by design.
     enabled: true
 
 # Optional fixers — off by default. Each entry adds RBAC verbs and exposes
