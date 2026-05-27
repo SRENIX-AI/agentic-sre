@@ -88,6 +88,19 @@ slack:
 driftReport:
   enabled: true
 
+# Operator (Phase 1) — ships the ClusterHealthAutopilot CRD shape
+# only. The cha-operator binary that reconciles ClusterHealthAutopilot
+# resources into the watcher Deployment / CronJobs / ServiceAccount
+# lands in Phase 2 (next release). Installing the CRD alone is
+# harmless: the resource is just queryable state.
+#
+# Default ON for new installs so the CRD is in place by the time the
+# operator binary ships and clusters that opt into operator-managed
+# installs in v1.8.x can `kubectl apply` a ClusterHealthAutopilot
+# without first updating the chart.
+operator:
+  installCRD: true
+
 # Vault-probe — closes the L1 stale-Ready window: queries Vault directly to
 # verify each ExternalSecret's referenced path + property still exists, BEFORE
 # the ESO controller's next refresh marks itself not-Ready. Catches the case
