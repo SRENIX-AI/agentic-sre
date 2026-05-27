@@ -1,6 +1,6 @@
 # Cluster Health Autopilot — Run Summary
 
-_Auto-generated 2026-05-26 06:05 UTC · 22 run(s) · 2026-05-04 → 2026-05-25_
+_Auto-generated 2026-05-27 06:24 UTC · 23 run(s) · 2026-05-04 → 2026-05-26_
 
 ## Health trend
 
@@ -28,6 +28,7 @@ _Auto-generated 2026-05-26 06:05 UTC · 22 run(s) · 2026-05-04 → 2026-05-25_
 | 2026-05-23 | run-2026-05-23 | 6 | 6 | 0 | 0 | 0 | 1 |
 | 2026-05-24 | run-2026-05-24 | 6 | 6 | 0 | 0 | 0 | 2 |
 | 2026-05-25 | run-2026-05-25 | 6 | 6 | 0 | 0 | 0 | 0 |
+| 2026-05-26 | run-2026-05-26 | 12 | 11 | 0 | 0 | 3 | 0 |
 
 ## Diagnostic patterns (top categories, anonymized)
 
@@ -44,7 +45,9 @@ _Auto-generated 2026-05-26 06:05 UTC · 22 run(s) · 2026-05-04 → 2026-05-25_
 
 | Severity/Component | Occurrences |
 |---|---|
+| `warning/component-a733dc9e` | 2 |
 | `warning/Critical Services` | 1 |
+| `warning/component-09858a0e` | 1 |
 
 ## Day-by-day details
 
@@ -502,6 +505,36 @@ _Auto-generated 2026-05-26 06:05 UTC · 22 run(s) · 2026-05-04 → 2026-05-25_
 
 </details>
 
+<details>
+<summary><strong>2026-05-26</strong> — 12 component(s) · 0 diagnostic(s)</summary>
+
+### Probes
+
+| Component | Status | Detail |
+|---|---|---|
+| Ceph Storage | HEALTHY | 1 cluster(s): rook-ceph@rook-ceph OK (12.2% used) |
+| Cluster Nodes | HEALTHY | All 6 nodes ready |
+| PostgreSQL | HEALTHY | 1 CNPG cluster(s): pg-ceph@pg (2/2 ready, primary=pg-ceph-5) |
+| Storage Claims | HEALTHY | All 77 PVCs bound |
+| Critical Services | HEALTHY | All 32 critical services operational |
+| component-a733dc9e | HEALTHY | All 30 endpoints reachable (24 auto-discovered, 2 transient under threshold) |
+| component-6f130a4d | HEALTHY | All 6 nodes pressure-clear |
+| component-35605956 | HEALTHY | All 5 system DaemonSets fully scheduled |
+| component-e7e62774 | HEALTHY | No pods Pending past grace period |
+| component-244066f0 | HEALTHY | No CrashLoopBackOff pods detected |
+| component-09858a0e | WARNING | No in-cluster etcd pods found in kube-system (external etcd or non-kubeadm install) |
+| component-514d9b4b | HEALTHY | No pods stuck on volume mount |
+
+### Findings
+
+| Component | Severity | Message |
+|---|---|---|
+| component-142efee8 | warning | [transient, 1/2] https://host-802794af: connection failed — dial tcp: lookup host-802794af on img-2122b00c:tag: no such host |
+| component-ba77a0cc | warning | [transient, 1/2] https://host-2c2e63d3: connection failed — dial tcp: lookup host-2c2e63d3 on img-2122b00c:tag: no such host |
+| component-09858a0e | warning | ETCD probe is blind: no in-cluster etcd pods captured. Cluster may be using external etcd. |
+
+</details>
+
 ---
 _All namespace, workload, and secret names are anonymized using deterministic SHA-256 hashing._
-_cha version(s) in this dataset: cluster-health-autopilot-0.9.1-4-g66c47e8, cluster-health-autopilot-0.9.1-5-g665a915, cluster-health-autopilot-1.4.0, cluster-health-autopilot-1.6.0, v1.5.2-1-g1e93148, v1.5.2-3-g08ba6f9_
+_cha version(s) in this dataset: cluster-health-autopilot-0.9.1-4-g66c47e8, cluster-health-autopilot-0.9.1-5-g665a915, cluster-health-autopilot-1.4.0, cluster-health-autopilot-1.6.0, v1.5.2-1-g1e93148, v1.5.2-3-g08ba6f9, v1.6.2-1-gf3bd85c_
