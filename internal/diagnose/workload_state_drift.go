@@ -176,8 +176,8 @@ func (w WorkloadStateDrift) checkStatefulSets(ctx context.Context, src snapshot.
 	// StatefulSet — avoids a full Pod list on every cycle if all
 	// StatefulSets look healthy.
 	type susp struct {
-		ns, name      string
-		labelSelector map[string]interface{}
+		ns, name       string
+		labelSelector  map[string]interface{}
 		desired, ready int64
 		ageOK          bool
 	}
