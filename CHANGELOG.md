@@ -24,9 +24,15 @@ serves the latest tagged chart cut.
 - Reader ClusterRole extended with read on `apiextensions.k8s.io/customresourcedefinitions`.
 - Default ON; flip `analyzers.configDrift.enabled=false` to disable, or set `CHA_ANALYZER_CONFIG_DRIFT=off`. 16 unit tests.
 
+### Added — Operator port Phase 1 (foundations)
+
+- **`api/v1alpha1/`** — `ClusterHealthAutopilot` CRD types (Spec, Status, Conditions) with hand-written DeepCopy methods. Foundations only; the controller-runtime Reconcile loop, the manager binary, and the chart wiring for operator-managed installs all come in Phase 1b. See `docs/design/2026-05-v1.8-operator-phase-1.md` for the staged-release rationale.
+- **`internal/operator/builders.go`** — pure-function builders that translate `ClusterHealthAutopilotSpec` → `*appsv1.Deployment` (watcher) and `*batchv1.CronJob` (diagnose, remediate). Mirror the existing chart's CLI argument format so an operator-managed install behaves identically to a Helm-managed install. 19 unit tests cover defaults, overrides, image-policy inference, pull-secret round-trip, and alerting-flag emission.
+- **`charts/.../templates/crd-clusterhealthautopilot.yaml`** — CRD shipped via the chart, gated behind `operator.installCRD` (default `true`). Installing the CRD on a cluster without the operator binary is harmless: the resource is queryable state with no controller acting on it.
+
 ### Deferred (still on the v1.8 plan)
 
-Reserve for v1.8 — capacity / security drift classes, GCP+Azure cloud probes, M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), operator port (controller-runtime Phase 1). See `docs/design/2026-05-v1.8-roadmap.md`.
+Reserve for v1.8 — capacity / security drift classes, GCP+Azure cloud probes, M2 K8s probes (Kong, HPA, ArgoCD Application, Velero), operator port Phase 1b (controller-runtime Reconcile + manager binary + envtest). See `docs/design/2026-05-v1.8-roadmap.md` and `docs/design/2026-05-v1.8-operator-phase-1.md`.
 
 ---
 
