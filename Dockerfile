@@ -17,6 +17,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY pkg ./pkg
 COPY catalog ./catalog
+COPY api ./api
 
 # VERSION may be overridden at build time:
 #   docker build --build-arg VERSION=v0.1.0 ...
@@ -33,9 +34,18 @@ RUN go build \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
     -o /out/cha \
     ./cmd/cha
+# cha-operator — controller-runtime manager (v1.8 Phase 1b). Same
+# image hosts both binaries so chart installs don't need a second
+# imagePullSecret; the operator Deployment overrides the command.
+RUN go build \
+    -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+    -o /out/cha-operator \
+    ./cmd/cha-operator
 
 # ---- runtime ----
 FROM gcr.io/distroless/static:nonroot
 COPY --from=builder /out/cha /usr/local/bin/cha
+COPY --from=builder /out/cha-operator /cha-operator
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/cha"]
