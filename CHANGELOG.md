@@ -73,6 +73,17 @@ First two probes of the M2 GCP slice from `docs/design/2026-05-cloud-probe-frame
 - **`catalog/cloud.go`** — `RegisterCloudOSS` now registers the GCP probes when `gcpEnabled=true` (parameter was previously unused).
 - 21 unit tests via fake client (11 Cloud SQL + 10 Persistent Disks).
 
+### Added — GCP cloud probes (Sprint 2 slice)
+
+Four more GCP probes (6 of 10 now shipped). Remaining 4 (LB backend, Google-managed certs, GCS public-access, KMS) follow in Sprint 3.
+
+- **`GKEControlPlane`** — flags the configured GKE cluster (env `CLOUD_GCP_GKE_CLUSTER`) when status is not RUNNING (ERROR/DEGRADED critical, transitional warning, not-found critical). Mirrors AWS `EKSControlPlane`. Subject `gcp-gke/<project>/<cluster>`.
+- **`GKENodePools`** — flags node pools in ERROR / RUNNING_WITH_ERROR (critical) or other non-RUNNING state (warning) for the configured cluster. Mirrors AWS `EKSNodeGroups`. Subject `gcp-gke-nodepool/<project>/<cluster>/<pool>`.
+- **`IAMServiceAccounts`** — posture drift: disabled SA still carrying user-managed keys (warning), > 2 user-managed keys (key sprawl; warning). Mirrors AWS `IAMRoles`. Subject `gcp-iam-sa/<project>/<email>`.
+- **`Subnets`** — IP-exhaustion: < 10% free critical, < 25% free warning; zero-total subnets skipped (no div-by-zero). Mirrors AWS `VPCSubnets`. Subject `gcp-subnet/<project>/<region>/<name>`.
+- `pkg/cloud/gcp` client + types extended; `catalog/cloud.go` registers all 6 GCP probes when `gcpEnabled=true`.
+- 18 unit tests.
+
 ### Added — Azure cloud probes (Sprint 1 slice)
 
 First two probes of the M2 Azure slice. The remaining 8 probes (AKS control plane, AKS nodepool, Managed Identity, App Gateway backend, certs, Storage public-access, Key Vault, VNet/subnet) ship on follow-up PRs against `feat/azure-cloud-probes`.
