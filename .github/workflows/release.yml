@@ -61,6 +61,14 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          # --parallelism 1 serializes the per-target Go builds. The v1.8
+          # binary's dependency graph grew substantially (controller-runtime
+          # + google.golang.org/api + azure-sdk-for-go), and GoReleaser's
+          # default parallelism (= NumCPU) ran all 6 cross-compile targets
+          # at once, OOM-killing the hosted runner during the v1.8.0 release
+          # (run 26553916530 died at ~8m with no GoReleaser error — the
+          # signature of a kernel OOM kill). Serializing bounds peak memory
+          # to a single Go build; the 60-min timeout has ample headroom.
+          args: release --clean --parallelism 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
