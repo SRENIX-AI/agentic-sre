@@ -17,6 +17,16 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.5] — 2026-05-28
+
+Chart-only fix found while enabling the paid tier on a live cluster.
+
+### Fixed — approval-server keygen-job image tag
+
+The `approval-server-keygen-job` (a Helm pre-install/upgrade hook that mints the Ed25519 signing key) still defaulted its image tag to `.Chart.AppVersion` (e.g. `1.8.2`), but cha-com images are tagged with a leading `v` (`v1.8.2`). On a fresh paid enable the keygen hook hit `ImagePullBackOff` and stalled the whole `helm upgrade` in `pending-upgrade`. Now uses the same `v<AppVersion>` default as the approval-server Deployment (fixed in 1.8.4). Without this, enabling `approval.enabled=true` required a manual `approval.image.tag` override.
+
+---
+
 ## [1.8.4] — 2026-05-28
 
 Corrects the AI-tier deployment model shipped in 1.8.3. No Go changes.
