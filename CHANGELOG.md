@@ -116,6 +116,19 @@ Four more Azure probes (6 of 10 now shipped). Mirrors GCP Sprint 2. Remaining 4 
 - `pkg/cloud/azure` Client + types extended; `catalog/cloud.go` registers all 6 Azure probes when `azureEnabled=true`.
 - 17 unit tests.
 
+### Added — Azure cloud probes (Sprint 3 slice — 10/10 Azure parity)
+
+Final 4 Azure probes — completes 10-probe parity with AWS + GCP. All three providers now have a 10-probe detection set with identical contracts.
+
+- **`AppGatewayBackends`** — 0 healthy members critical, partial-unhealthy warning. Mirrors AWS `ALBTargetHealth` / GCP `LoadBalancerBackends`. Subject `azure-appgw/<subscription>/<gateway>/<pool>`.
+- **`Certificates`** — not-issued critical, < 21d-to-expiry warning. Mirrors AWS `ACMCertExpiry` / GCP `ManagedCertificates`. Subject `azure-cert/<subscription>/<resourceGroup>/<name>`.
+- **`StoragePublicAccess`** — `allowBlobPublicAccess=true` critical, non-HTTPS-only warning. Mirrors AWS `S3BucketPublicAccess` / GCP `GCSPublicAccess`. Subject `azure-storage/<subscription>/<resourceGroup>/<name>`.
+- **`KeyVaults`** — no soft-delete critical, soft-delete-without-purge-protection warning (Azure's data-protection-posture analog to AWS/GCP KMS key-state). Subject `azure-keyvault/<subscription>/<resourceGroup>/<name>`.
+- `catalog/cloud.go` registers all 10 Azure probes when `azureEnabled=true`.
+- 17 unit tests.
+
+> **Note on cloud-probe execution:** the GCP + Azure probe *detection logic* is complete and unit-tested (10 probes each, parity with AWS), but neither provider has a Live SDK wrapper yet (`internal/cloud/{gcp,azure}/live.go` absent; `cloud.google.com/go` / `azure-sdk-for-go` not in go.mod). `cmd/cha buildCloudSource()` still errors for `--cloud-gcp-enabled` / `--cloud-azure-enabled`. Until the Live wrappers land, only **AWS** cloud probes execute against a real cloud; GCP/Azure are dormant. The Live wrappers are the remaining v1.8 cloud item.
+
 ### Added — M2 K8s probes (Kong / HPA / ArgoCD / Velero)
 
 Four new resource-event-driven probes from `docs/design/2026-05-trigger-expansion-roadmap.md` M2/M3 and v1.8 roadmap §A5. Each auto-skips when its CRD is absent (or no-ops on an empty list for HPA), so default-on is safe. Each is independently disablable via `CHA_PROBE_<NAME>=off`.
