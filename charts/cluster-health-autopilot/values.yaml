@@ -401,24 +401,36 @@ securityContext:
   capabilities:
     drop: ["ALL"]
 
-# AI tier (commercial / CHA-com only) — recommendation-only AI for narration,
+# AI tier (commercial / CHA-com) — recommendation-only AI for narration,
 # fix proposals, multi-step plans, and Vault recovery runbooks. Every tier
-# gates mutation behind human one-click approval. See docs/AI_TIERS.md.
+# gates mutation behind human one-click approval. See docs/AI_TIERS.md
+# and docs/DEPLOYMENT.md.
 #
-# OSS deployments leave ai.enabled=false; this entire block is then inert.
-#
-# Enabling this block requires the commercial CHA-com binary — set
-# image.repository=docker4zerocool/cha-com (the OSS `cha` binary does
-# not understand the --ai-* flags). The chart renders the flags only
-# when ai.enabled=true, so OSS installs are unaffected.
+# DEPLOYMENT MODEL — purely additive. Setting ai.enabled=true does NOT
+# touch the OSS watcher / diagnose / remediate workloads; they keep
+# running the OSS image and own the event-driven probe → fix → Slack /
+# ticketing / DriftReport pipeline. Instead the chart stands up a
+# SEPARATE "aiwatch" Deployment running the commercial `cha-com watch`
+# binary (image: ai.image below, default docker4zerocool/cha-com) — the
+# AI-layered counterpart that polls the same catalog on an interval and
+# fires the AI tiers against new diagnostics. No image swap of any OSS
+# workload is required; OSS install + this one flag = the paid tier.
 ai:
   enabled: false
   tier: t0                # t0 (narration) | t1 (fix proposals) | t2 (planner) | t3 (vault runbooks)
   endpoint: ""            # REQUIRED if enabled; OpenAI-compatible base URL, e.g. "https://mcp.baisoln.com/gpu-ai/v1"
   model: ""               # REQUIRED if enabled; e.g. "qwen3.6-35b-a3b-fp8"
+  interval: "60s"         # poll cadence; AI tiers fire only on NEW diagnostics each cycle (natural LLM-cost cap)
   allowSaas: false        # set true to allow api.openai.com / api.anthropic.com endpoints
   llmFixerMatcher: false  # t1+: use the LLM-classified fixer matcher (falls back to keyword on error)
   auditLog: ""            # AI-event audit sink: "" (off) | "-" (stdout) | "/path/to.jsonl". Set for t1+ compliance.
+  image:
+    # The commercial CHA-com image for the aiwatch Deployment. Tag
+    # defaults to "v<AppVersion>" (cha-com images carry a leading "v").
+    repository: docker4zerocool/cha-com
+    tag: ""               # default = "v" + .Chart.AppVersion (e.g. v1.8.2)
+    pullPolicy: IfNotPresent
+  resources: {}           # defaults to top-level resources if unset
   apiKey:
     secretName: ""        # K8s secret holding the LLM bearer token (ESO-managed); empty = no-auth in-cluster vLLM
     secretKey: "API_KEY"  # key within the secret

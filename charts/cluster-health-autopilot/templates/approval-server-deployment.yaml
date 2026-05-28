@@ -37,7 +37,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: approval-server
-          image: {{ .Values.approval.image.repository }}:{{ .Values.approval.image.tag | default .Chart.AppVersion }}
+          image: {{ .Values.approval.image.repository }}:{{ .Values.approval.image.tag | default (printf "v%s" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.approval.image.pullPolicy | default "IfNotPresent" }}
           args:
             - approval-server

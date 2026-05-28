@@ -82,6 +82,20 @@ Image reference: <repo>:<tag>. Defaults tag to .Chart.AppVersion.
 {{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
 
+{{- /*
+cha.aiImage — the commercial CHA-com image for the AI-companion
+Deployment. Repository defaults to docker4zerocool/cha-com; tag
+defaults to "v<AppVersion>" (cha-com images are tagged with a leading
+"v", unlike the OSS image), so a chart at appVersion 1.8.2 pulls
+docker4zerocool/cha-com:v1.8.2 — the CHA-com release pinned to the same
+OSS engine. Override ai.image.tag to decouple.
+*/ -}}
+{{- define "cha.aiImage" -}}
+{{- $repo := (.Values.ai.image).repository | default "docker4zerocool/cha-com" -}}
+{{- $tag := (.Values.ai.image).tag | default (printf "v%s" .Chart.AppVersion) -}}
+{{- printf "%s:%s" $repo $tag -}}
+{{- end -}}
+
 {{/*
 Effective pull policy: Always for mutable tags (latest / -latest suffix /
 empty + AppVersion that happens to be a dev marker), IfNotPresent for
@@ -264,19 +278,26 @@ probes.<name>.enabled=false in values.yaml to emit CHA_PROBE_<NAME>=off.
 {{- end -}}
 
 {{- /*
-cha.aiArgs — the --ai-* CLI flags for the commercial CHA-com binary,
-appended to the watcher / diagnose args ONLY when ai.enabled=true.
-The OSS `cha` binary does not understand these flags, so ai.enabled
-implies image.repository points at docker4zerocool/cha-com. Inert for
-OSS installs (block never renders). See docs/AI_TIERS.md.
+cha.aiArgs — the `cha-com watch` flag surface for the AI-companion
+Deployment (templates/aiwatch-deployment.yaml). These are the ONLY
+flags the commercial `cha-com watch` binary accepts — it is the
+"AI-layered counterpart" to the OSS watcher and deliberately does NOT
+re-expose the OSS operational flags (--live / --slack-* / --remedy /
+--ticketing-* / --cloud-* / --write-driftreports). The OSS watcher and
+diagnose/remediate CronJobs are NEVER swapped to cha-com; they keep
+running the OSS image + operational loop. See docs/DEPLOYMENT.md.
 */ -}}
 {{- define "cha.aiArgs" -}}
-{{- if (.Values.ai).enabled }}
+- watch
 - --ai-tier={{ .Values.ai.tier | default "t0" }}
 - --ai-endpoint={{ required "ai.endpoint is required when ai.enabled=true" .Values.ai.endpoint }}
 - --ai-model={{ required "ai.model is required when ai.enabled=true" .Values.ai.model }}
+- --interval={{ .Values.ai.interval | default "60s" }}
 {{- with (.Values.ai.apiKey).header }}
 - --ai-api-key-header={{ . }}
+{{- end }}
+{{- with (.Values.ai.apiKey).envName }}
+- --ai-api-key-env={{ . }}
 {{- end }}
 {{- if .Values.ai.allowSaas }}
 - --ai-allow-saas
@@ -289,7 +310,6 @@ OSS installs (block never renders). See docs/AI_TIERS.md.
 {{- end }}
 {{- range (.Values.ai.t3).vaultAllowedPrefixes }}
 - --t3-vault-allowed-prefix={{ . }}
-{{- end }}
 {{- end }}
 {{- end -}}
 

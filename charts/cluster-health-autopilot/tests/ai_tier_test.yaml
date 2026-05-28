@@ -1,20 +1,17 @@
-suite: AI tier (CHA-com) flag wiring (v1.8.3)
+suite: AI-companion (CHA-com) deployment wiring (v1.8.4)
 templates:
+  - templates/aiwatch-deployment.yaml
   - templates/watcher-deployment.yaml
 tests:
-  - it: no --ai-* args when ai.enabled is false (OSS default)
-    template: templates/watcher-deployment.yaml
+  - it: no aiwatch Deployment when ai.enabled is false (OSS default)
+    template: templates/aiwatch-deployment.yaml
     set:
-      watcher.enabled: true
+      ai.enabled: false
     asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].args
-          content: "--ai-tier=t0"
-      - notContains:
-          path: spec.template.spec.containers[0].args
-          content: "--ai-tier=t3"
+      - hasDocuments:
+          count: 0
 
-  - it: t3 wiring renders the full --ai-* arg surface
+  - it: OSS watcher is NEVER given --ai-* args (stays the OSS binary)
     template: templates/watcher-deployment.yaml
     set:
       watcher.enabled: true
@@ -22,12 +19,29 @@ tests:
       ai.tier: t3
       ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
       ai.model: "qwen3.6-35b-a3b-fp8"
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--ai-tier=t3"
+
+  - it: aiwatch Deployment runs cha-com watch with the full t3 flag surface
+    template: templates/aiwatch-deployment.yaml
+    set:
+      ai.enabled: true
+      ai.tier: t3
+      ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
+      ai.model: "qwen3.6-35b-a3b-fp8"
+      ai.interval: "120s"
       ai.apiKey.header: "X-API-Key"
       ai.apiKey.secretName: "cha-ai-llm-key"
       ai.auditLog: "-"
+      ai.llmFixerMatcher: true
       ai.t3.vaultAllowedPrefixes:
         - "secret/data/cha-recovery/"
     asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args[0]
+          value: watch
       - contains:
           path: spec.template.spec.containers[0].args
           content: "--ai-tier=t3"
@@ -39,7 +53,13 @@ tests:
           content: "--ai-model=qwen3.6-35b-a3b-fp8"
       - contains:
           path: spec.template.spec.containers[0].args
+          content: "--interval=120s"
+      - contains:
+          path: spec.template.spec.containers[0].args
           content: "--ai-api-key-header=X-API-Key"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--ai-llm-fixer-matcher"
       - contains:
           path: spec.template.spec.containers[0].args
           content: "--ai-audit-log=-"
@@ -47,12 +67,21 @@ tests:
           path: spec.template.spec.containers[0].args
           content: "--t3-vault-allowed-prefix=secret/data/cha-recovery/"
 
-  - it: AI_API_KEY env is sourced from the secret (never inlined)
-    template: templates/watcher-deployment.yaml
+  - it: aiwatch uses the cha-com image with the v-prefixed tag
+    template: templates/aiwatch-deployment.yaml
     set:
-      watcher.enabled: true
       ai.enabled: true
-      ai.tier: t3
+      ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
+      ai.model: "qwen3.6-35b-a3b-fp8"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: docker4zerocool/cha-com:v1.8.2
+
+  - it: AI_API_KEY env is sourced from the secret (never inlined)
+    template: templates/aiwatch-deployment.yaml
+    set:
+      ai.enabled: true
       ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
       ai.model: "qwen3.6-35b-a3b-fp8"
       ai.apiKey.secretName: "cha-ai-llm-key"
@@ -67,10 +96,24 @@ tests:
                 name: cha-ai-llm-key
                 key: apikey
 
-  - it: ai.enabled with no endpoint fails the render
-    template: templates/watcher-deployment.yaml
+  - it: signing key is mounted only when approval.enabled
+    template: templates/aiwatch-deployment.yaml
     set:
-      watcher.enabled: true
+      ai.enabled: true
+      ai.tier: t3
+      ai.endpoint: "https://mcp.baisoln.com/gpu-ai/v1"
+      ai.model: "qwen3.6-35b-a3b-fp8"
+      approval.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHA_SIGNING_KEY_PATH
+            value: /etc/cha/keys/signing.key
+
+  - it: ai.enabled with no endpoint fails the render
+    template: templates/aiwatch-deployment.yaml
+    set:
       ai.enabled: true
       ai.tier: t3
       ai.model: "qwen3.6-35b-a3b-fp8"
