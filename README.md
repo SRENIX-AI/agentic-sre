@@ -4,7 +4,7 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 
 > **Pre-launch — engineering preview.** This README will be the public face on launch day; treat its current contents as draft.
 
-## Status (v1.8.0 — 2026-05-28)
+## Status (v1.8.2 — 2026-05-28)
 
 | Capability | Status |
 |---|---|
@@ -13,12 +13,12 @@ A self-healing operational layer for Kubernetes clusters: **detect → remediate
 | Diagnose analyzers (8) — secret/cert/ESO/image-pull/TLS classes | ✅ shipped |
 | **Drift-class analyzers (6)** — `GitOpsDrift`, `WorkloadStateDrift`, `RBACDrift` (v1.7) + `ConfigDrift`, `CapacityDrift`, `SecurityDrift` (v1.8) | ✅ shipped |
 | Fixers (4 default + 1 opt-in) with GitOps + paused + suspended + cert-mgr-health safety gates | ✅ shipped |
-| **Cloud probes (30) — 10 each AWS / GCP / Azure**, all with Live SDK wrappers (IRSA / GCP Workload Identity / AAD Workload Identity). Off by default; enable per-provider | ✅ shipped |
+| **Cloud probes (30) — 10 each AWS / GCP / Azure**, all with Live SDK wrappers (IRSA / GCP Workload Identity / AAD Workload Identity). Off by default; enable per-provider. AWS fetches every signal live; a few GCP/Azure signals (subnet IP-utilization, SQL storage-%, Azure App Gateway backend health) report "not measured" pending the cloud Monitoring API (v1.9) rather than silently passing | ✅ shipped |
 | **Operator port (controller-runtime, v1.8)** — `ClusterHealthAutopilot` CRD + `cha-operator` manager reconciling watcher Deployment / CronJobs / RBAC; `Ready` + `WatcherRunning` conditions. Opt-in via `operator.enabled` | ✅ shipped (Phase 1 + 1b) |
-| Helm chart (v1.8.0) with lease-based leader election, configurable workloads, narrow RBAC, per-severity Slack repeat intervals, analyzer + cloud-provider toggles | ✅ shipped |
+| Helm chart (v1.8.3) with lease-based leader election, configurable workloads, narrow RBAC, per-severity Slack repeat intervals, analyzer + cloud-provider toggles, per-probe M2 toggles (`probes.<name>.enabled`), and AI-tier flag wiring for the commercial binary | ✅ shipped |
 | OpenProject ticketing sink (OSS) via MCP, Slack 3-channel routing with `--slack-critical-repeat-interval`, Alertmanager | ✅ shipped |
 | Layer-2 Investigator (OSS: deterministic implementation; CHA-com: LLM-backed agent) with event scrubbing + 6-tool action space | ✅ shipped |
-| CHA-com paid binary v1.7.0: approval-server, Ed25519 signing, gen-signing-key, paid catalog | ✅ shipped at `docker4zerocool/cha-com:1.7.0` (multi-arch) |
+| CHA-com paid binary v1.8.2: approval-server, Ed25519 signing, gen-signing-key, paid catalog — now pinned to OSS v1.8.2 so the paid binary carries the full v1.7/v1.8 detection surface (drift classes + M2 + 30 cloud probes) alongside the AI tier | ✅ shipped at `docker4zerocool/cha-com:v1.8.2` |
 | Four paid-tier analyzers: `VaultPathDriftPro`, `CertificateChainAnomaly`, `MultiClusterDrift`, `StatefulSetReplicaPressure` | ✅ shipped (CHA-com v1.0.1–v1.0.4) |
 | Paid AI tiers — T0 narration, T1 fix proposer (5 operator-policy-bounded action_kinds), T2 multi-step planner, T3 vault break-glass runbook (dual-approval, JWT-signed, hash-chained audit) | ✅ shipped (CHA-com v1.1.0–v1.4.0) |
 | `cha-com watch` subcommand — AI-layered poll loop with fingerprint dedup, `--ai-audit-log` JSONL sink | ✅ shipped (CHA-com v1.5.0) |

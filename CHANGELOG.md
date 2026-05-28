@@ -17,6 +17,26 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.4] — 2026-05-28
+
+Corrects the AI-tier deployment model shipped in 1.8.3. No Go changes.
+
+### Fixed — AI tier deploys as an additive companion, not an OSS-binary flag-swap
+
+1.8.3 folded the `--ai-*` flags into the **OSS** watcher Deployment and diagnose CronJob args, on the assumption that the commercial binary is a flag-superset of OSS. It is not: `cha-com watch` / `cha-com diagnose` are the **AI-layered counterparts** with a deliberately reduced flag surface — they reject the OSS operational flags (`--live`, `--write-driftreports`, `--slack-*`, `--remedy`, `--ticketing-*`, `--cloud-*`). Enabling 1.8.3's wiring + the cha-com image would have crash-looped the watcher on an unknown flag. (1.8.3 was gated on `ai.enabled=true`, default false, so no OSS or default install was affected.)
+
+The corrected, **purely additive** model:
+
+- The OSS watcher Deployment + diagnose / remediate CronJobs are **never swapped or modified** — they keep the OSS image and own the event-driven probe → fix → Slack / ticketing / DriftReport pipeline.
+- Setting `ai.enabled=true` stands up a **separate `aiwatch` Deployment** (new `templates/aiwatch-deployment.yaml`) running `cha-com watch` — the AI-layered counterpart that polls the same merged catalog on `ai.interval` and fires the AI tiers (t0→t3) against new diagnostics, signing click-to-fix URLs for the approval-server at t1+.
+- `cha.aiArgs` now emits exactly the `cha-com watch` flag surface (incl. `--interval`); `cha.aiImage` resolves the commercial image (`docker4zerocool/cha-com:v<AppVersion>`).
+- New `ai.image.*`, `ai.interval`, `ai.resources` values. The aiwatch pod reuses the chart's read-only reader SA (it only reads + proposes; never mutates).
+- Fixed the approval-server image-tag default to the `v`-prefixed cha-com convention (`v<AppVersion>`), which previously resolved to a non-existent tag.
+
+**Go-to-market:** OSS install + the single flag `ai.enabled=true` = the paid tier. No image-swap-and-pray. Full setup in `docs/DEPLOYMENT.md`.
+
+---
+
 ## [1.8.3] — 2026-05-28
 
 Chart-only release that completes the AI-tier (commercial CHA-com) deployment path. No Go changes.
