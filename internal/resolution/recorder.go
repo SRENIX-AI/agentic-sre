@@ -23,6 +23,7 @@ import (
 // Verdict is the post-apply verification result for a remediation.
 type Verdict string
 
+// Post-apply verification verdicts for a remediation.
 const (
 	VerdictCleared       Verdict = "cleared"        // re-probe confirmed the finding is gone
 	VerdictStillPresent  Verdict = "still-present"  // finding persisted after the fix
@@ -32,6 +33,7 @@ const (
 // Delivery records how the remediation reached execution.
 type Delivery string
 
+// Delivery channels by which a remediation reached execution.
 const (
 	DeliveryHumanApproved Delivery = "approved-by-human" // signed click-to-fix, human one-click
 	DeliveryAutoApplied   Delivery = "auto-applied"      // policy-bounded autonomy (P3)

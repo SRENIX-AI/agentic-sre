@@ -17,15 +17,26 @@ serves the latest tagged chart cut.
 
 ---
 
-## [1.8.7] — 2026-05-29
+## [1.8.9] — 2026-05-29
 
-P1/G4 foundation for the AI-remediation memory loop. Chart-only effect (new CRD + RBAC); the recorder library is dormant until the AI write-path wires it (P2).
+P1/G4 foundation for the AI-remediation memory loop. Chart-only effect (new CRD + RBAC); the recorder library is dormant until the AI write-path wires it (P2/G5c).
 
 ### Added — ResolutionRecord CRD + recorder
 
-- **`ResolutionRecord` CRD** (`resolutionrecords.cha.bionicaisolutions.com`, cluster-scoped, `rr` short name) — the append-only outcome log: one CR per applied+verified (or rejected/reverted) remediation, capturing `{fingerprint, source, subjectKind, diagnosticDigest, proposal{actionKind,target,rationale,rollback}, delivery, applied, verified}`. This is the durable system-of-record the dedicated RAG memory layer embeds + retrieves (so CHA can answer "how was a finding like this resolved before, and did it work?").
+- **`ResolutionRecord` CRD** (`resolutionrecords.cha.bionicaisolutions.com`, cluster-scoped, `rr` short name) — the append-only outcome log: one CR per applied+verified (or rejected/reverted) remediation, capturing `{fingerprint, source, subjectKind, diagnosticDigest, proposal{actionKind,target,rationale,rollback}, delivery, applied, verified}`. This is the durable system-of-record the dedicated RAG memory layer (1.8.8 Qdrant) embeds + retrieves.
 - **`internal/resolution` recorder** — `Recorder.Record()` appends a CR through the snapshot.Mutator (nil-safe / no-op in dry-run); stable `Fingerprint(source, subject)` join key to DriftReport.
 - **ResolutionRecord ClusterRole** — create/get/list/watch + status patch (for the RAG layer's `embeddedAt`/`vectorId` stamp), bound to the chart SA. Append-only (no delete verb).
+
+---
+
+## [1.8.8] — 2026-05-29
+
+P2/G5a — the dedicated RAG vector store deployment (chart-only; off by default).
+
+### Added — in-namespace Qdrant RAG
+
+- **`ai.memory.enabled`** stands up a dedicated **Qdrant** vector store (StatefulSet + PVC + ClusterIP Service) in the install namespace, alongside the other CHA objects. The aiwatch (P2/G5b–c, CHA-com) embeds ResolutionRecords via the in-cluster gpu-ai embeddings endpoint and retrieves prior resolutions to ground T1–T3 proposals. The ResolutionRecord CRD (1.8.9) is the system-of-record; Qdrant is the rebuildable semantic index over it.
+- New `ai.memory.*` values: `image`, `storage.{size,className}`, `resources`, `embeddings.{endpoint,model}`, `storeUrl`, `topK`. Off by default and independent of `ai.enabled` so it can be rolled out separately.
 
 ---
 
