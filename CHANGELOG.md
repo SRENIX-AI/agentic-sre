@@ -17,6 +17,18 @@ serves the latest tagged chart cut.
 
 ---
 
+## [1.8.7] — 2026-05-29
+
+P1/G4 foundation for the AI-remediation memory loop. Chart-only effect (new CRD + RBAC); the recorder library is dormant until the AI write-path wires it (P2).
+
+### Added — ResolutionRecord CRD + recorder
+
+- **`ResolutionRecord` CRD** (`resolutionrecords.cha.bionicaisolutions.com`, cluster-scoped, `rr` short name) — the append-only outcome log: one CR per applied+verified (or rejected/reverted) remediation, capturing `{fingerprint, source, subjectKind, diagnosticDigest, proposal{actionKind,target,rationale,rollback}, delivery, applied, verified}`. This is the durable system-of-record the dedicated RAG memory layer embeds + retrieves (so CHA can answer "how was a finding like this resolved before, and did it work?").
+- **`internal/resolution` recorder** — `Recorder.Record()` appends a CR through the snapshot.Mutator (nil-safe / no-op in dry-run); stable `Fingerprint(source, subject)` join key to DriftReport.
+- **ResolutionRecord ClusterRole** — create/get/list/watch + status patch (for the RAG layer's `embeddedAt`/`vectorId` stamp), bound to the chart SA. Append-only (no delete verb).
+
+---
+
 ## [1.8.6] — 2026-05-29
 
 P0 signal-hygiene from the AI-remediation plan (`docs/design/` in CHA-com), plus the chart arg that activates commercial click-to-fix delivery.
