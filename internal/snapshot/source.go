@@ -54,6 +54,10 @@ var (
 	GVRCephCluster = schema.GroupVersionResource{Group: "ceph.rook.io", Version: "v1", Resource: "cephclusters"}
 	GVRSecret      = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
 	GVRDriftReport = schema.GroupVersionResource{Group: "cha.bionicaisolutions.com", Version: "v1alpha1", Resource: "driftreports"}
+	// GVRResolutionRecord is the append-only outcome log: one record per
+	// applied+verified (or rejected/reverted) remediation. Source of truth
+	// for the RAG memory layer (P1/P2 of the AI-remediation plan).
+	GVRResolutionRecord = schema.GroupVersionResource{Group: "cha.bionicaisolutions.com", Version: "v1alpha1", Resource: "resolutionrecords"}
 
 	GVRSecretStore        = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "secretstores"}
 	GVRClusterSecretStore = schema.GroupVersionResource{Group: "external-secrets.io", Version: "v1", Resource: "clustersecretstores"}

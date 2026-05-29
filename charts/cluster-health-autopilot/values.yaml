@@ -93,6 +93,13 @@ slack:
 driftReport:
   enabled: true
 
+# ResolutionRecord CRD — append-only outcome log (one CR per applied+
+# verified remediation). The durable system-of-record the RAG memory
+# layer embeds + retrieves. Inspect with:
+#   kubectl get resolutionrecords -l cha.bionicaisolutions.com/verified=cleared
+resolutionRecord:
+  enabled: true
+
 # Operator (Phase 1) — ships the ClusterHealthAutopilot CRD shape
 # only. The cha-operator binary that reconciles ClusterHealthAutopilot
 # resources into the watcher Deployment / CronJobs / ServiceAccount

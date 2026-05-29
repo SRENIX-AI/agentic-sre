@@ -33,3 +33,6 @@ testdata/local/
 .DS_Store
 Thumbs.db
 dist/
+
+# stray local build binary (use bin/ for builds)
+/cha
