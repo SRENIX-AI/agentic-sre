@@ -133,6 +133,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, r.updateStatus(ctx, &cr)
 		}
 	}
+	if MemoryEnabled(&cr) {
+		// Validate the storage size up front — the builder's fallback
+		// would silently swap a typo'd "5gb" for the 5Gi default,
+		// which is exactly the kind of "looked right, did the wrong
+		// thing" failure we want to make loud.
+		if s := cr.Spec.AI.Memory.Storage; s != nil && s.Size != "" {
+			if _, err := parseQuantity(s.Size); err != nil {
+				r.markReady(&cr, metav1.ConditionFalse, "InvalidSpec",
+					"spec.ai.memory.storage.size: "+err.Error())
+				return ctrl.Result{}, r.updateStatus(ctx, &cr)
+			}
+		}
+	}
 
 	// 2. Reconcile each subresource. Collect errors so the
 	// status update reflects the partial state honestly.
@@ -149,6 +162,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	track(r.reconcileDiagnose(ctx, &cr))
 	track(r.reconcileRemediate(ctx, &cr))
 	track(r.reconcileAIWatch(ctx, &cr))
+	track(r.reconcileQdrant(ctx, &cr))
 
 	// 3. Compute Ready + WatcherRunning + ReaderRBACReady conditions
 	// from the observed cluster state.
@@ -330,6 +344,64 @@ func (r *Reconciler) reconcileAIWatch(ctx context.Context, cr *chav1alpha1.Clust
 	})
 }
 
+// reconcileQdrant creates / updates / deletes the in-namespace Qdrant
+// StatefulSet + ClusterIP Service that back the RAG memory loop when
+// spec.ai.memory.enabled=true. Mirrors the chart's
+// templates/rag-qdrant-*.yaml.
+//
+// IMPORTANT: K8s rejects mutations to StatefulSet.spec.{selector,
+// serviceName,volumeClaimTemplates,podManagementPolicy} after create
+// — the only safe in-place mutations are spec.{replicas,template,
+// updateStrategy,minReadySeconds}. So the Update path explicitly
+// overwrites just those.
+func (r *Reconciler) reconcileQdrant(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+	ns := cr.Namespace
+	name := NamesFor(cr).RAG
+
+	desiredSS := BuildQdrantStatefulSet(cr)
+	desiredSvc := BuildQdrantService(cr)
+
+	if desiredSS == nil {
+		// Memory off — tear down whatever we already manage. The PVC
+		// is intentionally NOT deleted (StatefulSet's standard
+		// behavior; operators who want PVC cleanup do it explicitly).
+		if err := r.deleteIfExists(ctx, &appsv1.StatefulSet{}, ns, name); err != nil {
+			return fmt.Errorf("delete qdrant StatefulSet: %w", err)
+		}
+		return r.deleteIfExists(ctx, &corev1.Service{}, ns, name)
+	}
+
+	if err := controllerutilSetOwnerRef(cr, desiredSS, r.Scheme); err != nil {
+		return err
+	}
+	if err := controllerutilSetOwnerRef(cr, desiredSvc, r.Scheme); err != nil {
+		return err
+	}
+
+	// Service first — the StatefulSet's ServiceName references it.
+	if err := r.createOrUpdate(ctx, desiredSvc, func(current client.Object) {
+		c := current.(*corev1.Service)
+		// Don't touch ClusterIP (immutable) or live Endpoints. Only
+		// spec.ports + spec.selector + labels need to track the
+		// desired state.
+		c.Spec.Ports = desiredSvc.Spec.Ports
+		c.Spec.Selector = desiredSvc.Spec.Selector
+		mergeLabels(&c.ObjectMeta, desiredSvc.Labels)
+	}); err != nil {
+		return fmt.Errorf("qdrant Service: %w", err)
+	}
+	return r.createOrUpdate(ctx, desiredSS, func(current client.Object) {
+		c := current.(*appsv1.StatefulSet)
+		// Only mutate the mutable fields. Leave Selector / ServiceName /
+		// VolumeClaimTemplates alone — those land at first Create and
+		// the apiserver rejects any change after.
+		c.Spec.Replicas = desiredSS.Spec.Replicas
+		c.Spec.Template = desiredSS.Spec.Template
+		c.Spec.UpdateStrategy = desiredSS.Spec.UpdateStrategy
+		mergeLabels(&c.ObjectMeta, desiredSS.Labels)
+	})
+}
+
 // createOrUpdate is the local CreateOrUpdate variant. Standard
 // controller-runtime ctrl.CreateOrUpdate would also work; we keep
 // our own so the mutate signature is typed by us (no reflection in
@@ -485,10 +557,57 @@ func (r *Reconciler) computeConditions(ctx context.Context, cr *chav1alpha1.Clus
 	setCondition(&cr.Status, chav1alpha1.ConditionAIWatchRunning,
 		aiStatus, aiReason, aiMsg, cr.Generation)
 
+	// MemoryStoreReady (Phase 2b) — True only when BOTH the Qdrant
+	// Service and StatefulSet exist AND the StatefulSet reports
+	// readyReplicas > 0. Either missing → False; only Disabled when
+	// memory is off in spec.
+	var memStatus metav1.ConditionStatus
+	var memReason, memMsg string
+	if !MemoryEnabled(cr) {
+		memStatus = metav1.ConditionFalse
+		memReason = "Disabled"
+		memMsg = "spec.ai.memory.enabled is false"
+	} else {
+		var svc corev1.Service
+		svcErr := r.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: NamesFor(cr).RAG}, &svc)
+		var ss appsv1.StatefulSet
+		ssErr := r.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: NamesFor(cr).RAG}, &ss)
+		switch {
+		case apierrors.IsNotFound(svcErr):
+			memStatus = metav1.ConditionFalse
+			memReason = "ServiceMissing"
+			memMsg = "Qdrant Service " + NamesFor(cr).RAG + " not found"
+		case apierrors.IsNotFound(ssErr):
+			memStatus = metav1.ConditionFalse
+			memReason = "StatefulSetMissing"
+			memMsg = "Qdrant StatefulSet " + NamesFor(cr).RAG + " not found"
+		case svcErr != nil:
+			memStatus = metav1.ConditionUnknown
+			memReason = "GetFailed"
+			memMsg = svcErr.Error()
+		case ssErr != nil:
+			memStatus = metav1.ConditionUnknown
+			memReason = "GetFailed"
+			memMsg = ssErr.Error()
+		case ss.Status.ReadyReplicas > 0:
+			memStatus = metav1.ConditionTrue
+			memReason = "ReadyReplicasPositive"
+			memMsg = fmt.Sprintf("readyReplicas=%d/%d",
+				ss.Status.ReadyReplicas, *ss.Spec.Replicas)
+		default:
+			memStatus = metav1.ConditionFalse
+			memReason = "NoReadyReplicas"
+			memMsg = "Qdrant StatefulSet has no ready replicas"
+		}
+	}
+	setCondition(&cr.Status, chav1alpha1.ConditionMemoryStoreReady,
+		memStatus, memReason, memMsg, cr.Generation)
+
 	// Ready — True iff reconcile had no error AND every other
 	// condition that gates correctness is True. AIWatchRunning is
-	// gating ONLY when AI is enabled (Disabled is the steady state
-	// for most installs; it must not flip Ready=False).
+	// gating ONLY when AI is enabled; MemoryStoreReady is gating
+	// ONLY when memory is enabled. Neither gates an install that
+	// doesn't opt into them.
 	readyStatus := metav1.ConditionTrue
 	readyReason := "Reconciled"
 	readyMsg := "all subresources reconciled"
@@ -505,6 +624,10 @@ func (r *Reconciler) computeConditions(ctx context.Context, cr *chav1alpha1.Clus
 		readyStatus = metav1.ConditionFalse
 		readyReason = "AIWatchNotReady"
 		readyMsg = "AIWatchRunning=" + string(aiStatus) + ": " + aiMsg
+	case MemoryEnabled(cr) && memStatus != metav1.ConditionTrue:
+		readyStatus = metav1.ConditionFalse
+		readyReason = "MemoryStoreNotReady"
+		readyMsg = "MemoryStoreReady=" + string(memStatus) + ": " + memMsg
 	}
 	setCondition(&cr.Status, chav1alpha1.ConditionReady,
 		readyStatus, readyReason, readyMsg, cr.Generation)
@@ -538,13 +661,16 @@ func (r *Reconciler) updateStatus(ctx context.Context, cr *chav1alpha1.ClusterHe
 }
 
 // SetupWithManager registers the reconciler with the controller-runtime
-// manager. Owns() the four child resource types so changes to them
-// requeue the parent CR.
+// manager. Owns() the child resource types so changes to them requeue
+// the parent CR. Phase 2b adds StatefulSet + Service (for the RAG
+// Qdrant).
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&chav1alpha1.ClusterHealthAutopilot{}, builder.WithPredicates()).
 		Owns(&corev1.ServiceAccount{}).
+		Owns(&corev1.Service{}).
 		Owns(&appsv1.Deployment{}).
+		Owns(&appsv1.StatefulSet{}).
 		Owns(&batchv1.CronJob{}).
 		Complete(r)
 }

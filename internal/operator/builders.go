@@ -24,6 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -61,6 +62,13 @@ const (
 	defaultAIImageRepo             = "docker4zerocool/cha-com"
 	defaultAIMemoryTopK      int32 = 5
 
+	// Qdrant defaults — mirror the chart's rag-qdrant-statefulset.yaml.
+	defaultQdrantImageRepo   = "qdrant/qdrant"
+	defaultQdrantImageTag    = "v1.12.4"
+	defaultQdrantStorageSize = "5Gi"
+	qdrantHTTPPort           = int32(6333)
+	qdrantGRPCPort           = int32(6334)
+
 	// roleLabelKey + roleLabelValue match the chart's labels so
 	// existing CronJob/Deployment selectors keep working when an
 	// install migrates from Helm to the operator.
@@ -74,6 +82,11 @@ type ResourceNames struct {
 	Diagnose       string
 	Remediate      string
 	AIWatch        string
+	// RAG is shared by the Qdrant StatefulSet AND its ClusterIP
+	// Service (both named identically — matches the chart). The
+	// aiwatch's default `--memory-store-url` resolves to
+	// `http://<RAG>.<ns>.svc:6333`.
+	RAG string
 }
 
 // NamesFor returns the canonical resource names derived from the CR
@@ -86,6 +99,7 @@ func NamesFor(cr *chav1alpha1.ClusterHealthAutopilot) ResourceNames {
 		Diagnose:       cr.Name + "-diagnose",
 		Remediate:      cr.Name + "-remediate",
 		AIWatch:        cr.Name + "-aiwatch",
+		RAG:            cr.Name + "-rag",
 	}
 }
 
@@ -601,4 +615,222 @@ func aiPullSecrets(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 		return ai.Image.PullSecrets
 	}
 	return cr.Spec.Image.PullSecrets
+}
+
+// --- Qdrant (Phase 2b) ---
+
+// MemoryEnabled reports whether `spec.ai.memory.enabled` is true. The
+// memory store is gated independently of AI itself — you can run
+// aiwatch without memory (it falls back to in-process retrieval) and
+// you can stand up Qdrant without enabling AI (e.g. preheat the index
+// before a tier flip). Match the chart's behavior here exactly.
+func MemoryEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
+	return cr.Spec.AI != nil && cr.Spec.AI.Memory != nil && cr.Spec.AI.Memory.Enabled
+}
+
+// qdrantImageRef returns the "<repo>:<tag>" for the Qdrant container.
+// Defaults match the chart's rag-qdrant-statefulset.yaml.
+func qdrantImageRef(cr *chav1alpha1.ClusterHealthAutopilot) string {
+	repo := defaultQdrantImageRepo
+	tag := defaultQdrantImageTag
+	if m := cr.Spec.AI.Memory; m != nil && m.Image != nil {
+		if m.Image.Repository != "" {
+			repo = m.Image.Repository
+		}
+		if m.Image.Tag != "" {
+			tag = m.Image.Tag
+		}
+	}
+	return fmt.Sprintf("%s:%s", repo, tag)
+}
+
+// qdrantPullPolicy mirrors aiPullPolicy. Defaults to IfNotPresent for
+// the qdrant/qdrant semver tag.
+func qdrantPullPolicy(cr *chav1alpha1.ClusterHealthAutopilot) corev1.PullPolicy {
+	if m := cr.Spec.AI.Memory; m != nil && m.Image != nil {
+		if m.Image.PullPolicy != "" {
+			return corev1.PullPolicy(m.Image.PullPolicy)
+		}
+		switch m.Image.Tag {
+		case "latest", "main", "dev":
+			return corev1.PullAlways
+		}
+	}
+	return corev1.PullIfNotPresent
+}
+
+// BuildQdrantService returns the ClusterIP Service the aiwatch reaches
+// the vector store on. Two ports (6333 REST + 6334 gRPC) — match the
+// chart. Returns nil when memory is disabled.
+func BuildQdrantService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.Service {
+	if !MemoryEnabled(cr) {
+		return nil
+	}
+	labels := CommonLabels(cr, "rag")
+	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Service"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      NamesFor(cr).RAG,
+			Namespace: cr.Namespace,
+			Labels:    labels,
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: labels,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					Port:       qdrantHTTPPort,
+					TargetPort: intstr.FromString("http"),
+					Protocol:   corev1.ProtocolTCP,
+				},
+				{
+					Name:       "grpc",
+					Port:       qdrantGRPCPort,
+					TargetPort: intstr.FromString("grpc"),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+		},
+	}
+}
+
+// BuildQdrantStatefulSet returns the Qdrant StatefulSet, or nil when
+// memory is disabled. Single replica (chart matches — Qdrant doesn't
+// horizontally scale here; the index is rebuildable from
+// ResolutionRecord CRs). Storage flows via volumeClaimTemplates.
+//
+// IMPORTANT for reconcile path: K8s forbids changes to
+// spec.{selector,serviceName,volumeClaimTemplates,podManagementPolicy}.
+// reconcileQdrant must only mutate spec.{replicas,template,
+// updateStrategy} on update.
+func BuildQdrantStatefulSet(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.StatefulSet {
+	if !MemoryEnabled(cr) {
+		return nil
+	}
+	names := NamesFor(cr)
+	labels := CommonLabels(cr, "rag")
+	replicas := int32(1)
+
+	storageSize := defaultQdrantStorageSize
+	var storageClass *string
+	if m := cr.Spec.AI.Memory; m != nil && m.Storage != nil {
+		if m.Storage.Size != "" {
+			storageSize = m.Storage.Size
+		}
+		if m.Storage.ClassName != "" {
+			cn := m.Storage.ClassName
+			storageClass = &cn
+		}
+	}
+	storageQty, err := parseQuantity(storageSize)
+	if err != nil {
+		// Reconciler validates this before calling; the fallthrough is
+		// defense in depth — we'd rather ship 5Gi than panic.
+		storageQty = mustParseQuantity(defaultQdrantStorageSize)
+	}
+
+	return &appsv1.StatefulSet{
+		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "StatefulSet"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      names.RAG,
+			Namespace: cr.Namespace,
+			Labels:    labels,
+		},
+		Spec: appsv1.StatefulSetSpec{
+			ServiceName: names.RAG,
+			Replicas:    &replicas,
+			Selector:    &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{
+					ImagePullSecrets: pullSecretRefs(qdrantPullSecrets(cr)),
+					Containers: []corev1.Container{
+						{
+							Name:            "qdrant",
+							Image:           qdrantImageRef(cr),
+							ImagePullPolicy: qdrantPullPolicy(cr),
+							Ports: []corev1.ContainerPort{
+								{Name: "http", ContainerPort: qdrantHTTPPort, Protocol: corev1.ProtocolTCP},
+								{Name: "grpc", ContainerPort: qdrantGRPCPort, Protocol: corev1.ProtocolTCP},
+							},
+							// Match the chart's QDRANT__STORAGE__SNAPSHOTS_PATH +
+							// _TEMP_PATH overrides. Without these Qdrant tries
+							// to write to /qdrant/snapshots and /qdrant/.qdrant-temp
+							// on the read-only image FS and CrashLoops.
+							Env: []corev1.EnvVar{
+								{Name: "QDRANT__STORAGE__SNAPSHOTS_PATH", Value: "/qdrant/storage/snapshots"},
+								{Name: "QDRANT__STORAGE__TEMP_PATH", Value: "/qdrant/storage/temp"},
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/readyz",
+										Port: intstr.FromString("http"),
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       10,
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/livez",
+										Port: intstr.FromString("http"),
+									},
+								},
+								InitialDelaySeconds: 15,
+								PeriodSeconds:       20,
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{Name: "storage", MountPath: "/qdrant/storage"},
+							},
+						},
+					},
+				},
+			},
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "storage"},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						StorageClassName: storageClass,
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: storageQty,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// qdrantPullSecrets honors spec.ai.memory.image.pullSecrets first, then
+// falls back to the OSS image's pullSecrets (chart pulls Qdrant from
+// the same registry as the OSS image in shared-secret installs).
+func qdrantPullSecrets(cr *chav1alpha1.ClusterHealthAutopilot) []string {
+	if m := cr.Spec.AI.Memory; m != nil && m.Image != nil && len(m.Image.PullSecrets) > 0 {
+		return m.Image.PullSecrets
+	}
+	return cr.Spec.Image.PullSecrets
+}
+
+// parseQuantity wraps k8s resource.ParseQuantity. The Reconciler
+// validates spec.ai.memory.storage.size at the door so the builder
+// shouldn't see invalid values, but the wrapper keeps the call sites
+// terse and the error path explicit.
+func parseQuantity(s string) (resource.Quantity, error) {
+	return resource.ParseQuantity(s)
+}
+
+// mustParseQuantity is the panic-on-failure variant used only with
+// compile-time-known strings (the defaultQdrantStorageSize literal).
+func mustParseQuantity(s string) resource.Quantity {
+	q, err := resource.ParseQuantity(s)
+	if err != nil {
+		panic(fmt.Sprintf("parse compile-time quantity %q: %v", s, err))
+	}
+	return q
 }

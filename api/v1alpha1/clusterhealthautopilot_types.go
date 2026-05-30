@@ -252,6 +252,15 @@ const (
 	// without inferring from a missing condition). True only when the
 	// observed Deployment has at least one available replica.
 	ConditionAIWatchRunning = "AIWatchRunning"
+
+	// ConditionMemoryStoreReady reflects the in-namespace Qdrant
+	// StatefulSet + Service that back the RAG memory loop when
+	// `spec.ai.memory.enabled` is true. False/Disabled when memory is
+	// off. True only when the StatefulSet reports readyReplicas > 0
+	// AND the Service exists. Independent of AIWatchRunning — the
+	// store can be Ready before aiwatch even starts, and the
+	// aiwatch can run without memory.
+	ConditionMemoryStoreReady = "MemoryStoreReady"
 )
 
 // FinalizerOperatorRBAC tags a ClusterHealthAutopilot CR for the RBAC
@@ -290,16 +299,17 @@ type ClusterHealthAutopilotList struct {
 // AISpec is the typed schema for the CHA-com paid-tier AI watcher
 // (aiwatch + approval-server + optional RAG store).
 //
-// Phase 2 (shipped) — the controller reconciles `spec.ai` into an
-// `<cr>-aiwatch` Deployment that mirrors the chart's
-// `aiwatch-deployment.yaml`, including the t3 + memory CLI flags
-// (the aiwatch binary already accepts them). What the operator does
-// NOT yet stand up: the in-namespace Qdrant StatefulSet + Service
-// that `spec.ai.memory.enabled=true` implies. When memory is enabled
-// against an operator-managed install, point `storeUrl` at an
-// existing Qdrant (chart-managed install in the same namespace, or
-// an external endpoint). A follow-up slice will add Qdrant
-// reconciliation.
+// Phase 2 / 2b (shipped) — the controller reconciles `spec.ai` into:
+//   - an `<cr>-aiwatch` Deployment that mirrors the chart's
+//     `aiwatch-deployment.yaml`, including the t3 + memory CLI flags.
+//   - an `<cr>-rag` Qdrant StatefulSet + Service when
+//     `spec.ai.memory.enabled=true` (mirrors the chart's
+//     `rag-qdrant-*.yaml`). The aiwatch's default `--memory-store-url`
+//     resolves to this Service.
+//
+// Still NOT operator-managed (chart-only for now): the approval-server
+// Deployment + Ed25519 signing-key Secret for
+// `spec.ai.approvalServerUrl`.
 type AISpec struct {
 	// Enabled is the master switch. Default false; matches helm
 	// `ai.enabled`.
