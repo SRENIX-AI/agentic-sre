@@ -112,6 +112,27 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			"spec.image.tag is required and must be non-empty")
 		return ctrl.Result{}, r.updateStatus(ctx, &cr)
 	}
+	if AIEnabled(&cr) {
+		// Mirror the chart's `required` directives for `cha.aiArgs`.
+		// Better to fail fast here than to ship the aiwatch with an
+		// empty --ai-endpoint / --ai-model and CrashLoopBackoff.
+		if cr.Spec.AI.Endpoint == "" {
+			r.markReady(&cr, metav1.ConditionFalse, "InvalidSpec",
+				"spec.ai.endpoint is required when spec.ai.enabled=true")
+			return ctrl.Result{}, r.updateStatus(ctx, &cr)
+		}
+		if cr.Spec.AI.Model == "" {
+			r.markReady(&cr, metav1.ConditionFalse, "InvalidSpec",
+				"spec.ai.model is required when spec.ai.enabled=true")
+			return ctrl.Result{}, r.updateStatus(ctx, &cr)
+		}
+		if m := cr.Spec.AI.Memory; m != nil && m.Enabled &&
+			(m.Embeddings == nil || m.Embeddings.Model == "") {
+			r.markReady(&cr, metav1.ConditionFalse, "InvalidSpec",
+				"spec.ai.memory.embeddings.model is required when spec.ai.memory.enabled=true")
+			return ctrl.Result{}, r.updateStatus(ctx, &cr)
+		}
+	}
 
 	// 2. Reconcile each subresource. Collect errors so the
 	// status update reflects the partial state honestly.
@@ -127,6 +148,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	track(r.reconcileWatcher(ctx, &cr))
 	track(r.reconcileDiagnose(ctx, &cr))
 	track(r.reconcileRemediate(ctx, &cr))
+	track(r.reconcileAIWatch(ctx, &cr))
 
 	// 3. Compute Ready + WatcherRunning + ReaderRBACReady conditions
 	// from the observed cluster state.
@@ -282,6 +304,32 @@ func (r *Reconciler) reconcileRemediate(ctx context.Context, cr *chav1alpha1.Clu
 	})
 }
 
+// reconcileAIWatch creates / updates / deletes the CHA-com aiwatch
+// Deployment based on Spec.AI. Mirrors reconcileWatcher.
+//
+// Phase 2: the aiwatch container is the AI-companion to the OSS
+// watcher; it polls the same merged probe+analyzer catalog and fires
+// recommendation-only AI tiers against new diagnostics. Enabling AI
+// is purely additive — the OSS watcher Deployment and the diagnose /
+// remediate CronJobs keep running independently.
+func (r *Reconciler) reconcileAIWatch(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
+	desired := BuildAIWatchDeployment(cr)
+	name := NamesFor(cr).AIWatch
+	if desired == nil {
+		return r.deleteIfExists(ctx, &appsv1.Deployment{}, cr.Namespace, name)
+	}
+	if err := controllerutilSetOwnerRef(cr, desired, r.Scheme); err != nil {
+		return err
+	}
+	return r.createOrUpdate(ctx, desired, func(current client.Object) {
+		c := current.(*appsv1.Deployment)
+		c.Spec.Replicas = desired.Spec.Replicas
+		c.Spec.Template = desired.Spec.Template
+		c.Spec.Strategy = desired.Spec.Strategy
+		mergeLabels(&c.ObjectMeta, desired.Labels)
+	})
+}
+
 // createOrUpdate is the local CreateOrUpdate variant. Standard
 // controller-runtime ctrl.CreateOrUpdate would also work; we keep
 // our own so the mutate signature is typed by us (no reflection in
@@ -399,9 +447,48 @@ func (r *Reconciler) computeConditions(ctx context.Context, cr *chav1alpha1.Clus
 	setCondition(&cr.Status, chav1alpha1.ConditionReaderRBACReady,
 		rbacStatus, rbacReason, rbacMsg, cr.Generation)
 
+	// AIWatchRunning (Phase 2) — same shape as WatcherRunning. Set
+	// even when AI is disabled so dashboards can show "AI off"
+	// explicitly rather than inferring from a missing condition.
+	var aiStatus metav1.ConditionStatus
+	var aiReason, aiMsg string
+	if !AIEnabled(cr) {
+		aiStatus = metav1.ConditionFalse
+		aiReason = "Disabled"
+		aiMsg = "spec.ai.enabled is false"
+	} else {
+		var dep appsv1.Deployment
+		err := r.Get(ctx, types.NamespacedName{
+			Namespace: cr.Namespace,
+			Name:      NamesFor(cr).AIWatch,
+		}, &dep)
+		switch {
+		case apierrors.IsNotFound(err):
+			aiStatus = metav1.ConditionFalse
+			aiReason = "DeploymentMissing"
+			aiMsg = "aiwatch Deployment not found"
+		case err != nil:
+			aiStatus = metav1.ConditionUnknown
+			aiReason = "GetFailed"
+			aiMsg = err.Error()
+		case dep.Status.AvailableReplicas > 0:
+			aiStatus = metav1.ConditionTrue
+			aiReason = "AvailableReplicasPositive"
+			aiMsg = fmt.Sprintf("availableReplicas=%d/%d",
+				dep.Status.AvailableReplicas, *dep.Spec.Replicas)
+		default:
+			aiStatus = metav1.ConditionFalse
+			aiReason = "NoAvailableReplicas"
+			aiMsg = "aiwatch Deployment has no available replicas"
+		}
+	}
+	setCondition(&cr.Status, chav1alpha1.ConditionAIWatchRunning,
+		aiStatus, aiReason, aiMsg, cr.Generation)
+
 	// Ready — True iff reconcile had no error AND every other
-	// condition that gates correctness is True. Phase 1c adds
-	// ReaderRBACReady to the AND; Phase 2 may add AlertmanagerConnected.
+	// condition that gates correctness is True. AIWatchRunning is
+	// gating ONLY when AI is enabled (Disabled is the steady state
+	// for most installs; it must not flip Ready=False).
 	readyStatus := metav1.ConditionTrue
 	readyReason := "Reconciled"
 	readyMsg := "all subresources reconciled"
@@ -414,6 +501,10 @@ func (r *Reconciler) computeConditions(ctx context.Context, cr *chav1alpha1.Clus
 		readyStatus = metav1.ConditionFalse
 		readyReason = "ReaderRBACNotReady"
 		readyMsg = "ReaderRBACReady=" + string(rbacStatus) + ": " + rbacMsg
+	case AIEnabled(cr) && aiStatus != metav1.ConditionTrue:
+		readyStatus = metav1.ConditionFalse
+		readyReason = "AIWatchNotReady"
+		readyMsg = "AIWatchRunning=" + string(aiStatus) + ": " + aiMsg
 	}
 	setCondition(&cr.Status, chav1alpha1.ConditionReady,
 		readyStatus, readyReason, readyMsg, cr.Generation)
