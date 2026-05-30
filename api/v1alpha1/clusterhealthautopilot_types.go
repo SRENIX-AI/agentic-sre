@@ -245,6 +245,13 @@ const (
 	// missing — the watcher would get `forbidden` on every List
 	// without them.
 	ConditionReaderRBACReady = "ReaderRBACReady"
+
+	// ConditionAIWatchRunning reflects the CHA-com aiwatch Deployment
+	// state when `spec.ai.enabled` is true. False/Disabled when AI is
+	// off (the field is still set so dashboards can show "AI disabled"
+	// without inferring from a missing condition). True only when the
+	// observed Deployment has at least one available replica.
+	ConditionAIWatchRunning = "AIWatchRunning"
 )
 
 // FinalizerOperatorRBAC tags a ClusterHealthAutopilot CR for the RBAC
@@ -281,11 +288,18 @@ type ClusterHealthAutopilotList struct {
 }
 
 // AISpec is the typed schema for the CHA-com paid-tier AI watcher
-// (aiwatch + approval-server + optional RAG store). Schema-only in
-// Phase 1 — the controller does NOT consume these fields yet. Adding
-// the schema now lets operator-managed installs declare AI config on
-// the CR ahead of the Phase 2 reconciler wiring; today's installs
-// continue to configure AI via the chart's `ai.*` helm values.
+// (aiwatch + approval-server + optional RAG store).
+//
+// Phase 2 (shipped) — the controller reconciles `spec.ai` into an
+// `<cr>-aiwatch` Deployment that mirrors the chart's
+// `aiwatch-deployment.yaml`, including the t3 + memory CLI flags
+// (the aiwatch binary already accepts them). What the operator does
+// NOT yet stand up: the in-namespace Qdrant StatefulSet + Service
+// that `spec.ai.memory.enabled=true` implies. When memory is enabled
+// against an operator-managed install, point `storeUrl` at an
+// existing Qdrant (chart-managed install in the same namespace, or
+// an external endpoint). A follow-up slice will add Qdrant
+// reconciliation.
 type AISpec struct {
 	// Enabled is the master switch. Default false; matches helm
 	// `ai.enabled`.

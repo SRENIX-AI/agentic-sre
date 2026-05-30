@@ -50,6 +50,17 @@ const (
 
 	defaultSlackSecretKey = "WEBHOOK_URL"
 
+	// AI / aiwatch defaults. Mirror the chart's `cha.aiArgs` helper —
+	// the same wire-format the cha-com binary already accepts under
+	// chart-managed installs. Any divergence between the chart and
+	// these defaults is a Phase 2 regression worth a test.
+	defaultAITier                  = "t0"
+	defaultAIInterval              = "60s"
+	defaultAIAPIKeyEnvName         = "AI_API_KEY"
+	defaultAIAPIKeySecretKey       = "API_KEY"
+	defaultAIImageRepo             = "docker4zerocool/cha-com"
+	defaultAIMemoryTopK      int32 = 5
+
 	// roleLabelKey + roleLabelValue match the chart's labels so
 	// existing CronJob/Deployment selectors keep working when an
 	// install migrates from Helm to the operator.
@@ -62,6 +73,7 @@ type ResourceNames struct {
 	Watcher        string
 	Diagnose       string
 	Remediate      string
+	AIWatch        string
 }
 
 // NamesFor returns the canonical resource names derived from the CR
@@ -73,6 +85,7 @@ func NamesFor(cr *chav1alpha1.ClusterHealthAutopilot) ResourceNames {
 		Watcher:        cr.Name + "-watcher",
 		Diagnose:       cr.Name + "-diagnose",
 		Remediate:      cr.Name + "-remediate",
+		AIWatch:        cr.Name + "-aiwatch",
 	}
 }
 
@@ -363,4 +376,229 @@ func slackChannelFlag(channel string, c *chav1alpha1.SlackChannelSpec) string {
 func intstrPtr(i int) *intstr.IntOrString {
 	v := intstr.FromInt(i)
 	return &v
+}
+
+// --- AI / aiwatch (Phase 2) ---
+
+// aiImageRef returns the cha-com image reference. Defaults the repo to
+// docker4zerocool/cha-com and the tag to `v<OSS image tag>` — matching
+// the chart's convention where the cha-com image is tagged with a
+// leading "v" alongside the OSS image's bare semver. Override via
+// spec.ai.image.{repository,tag}.
+func aiImageRef(cr *chav1alpha1.ClusterHealthAutopilot) string {
+	repo := defaultAIImageRepo
+	tag := "v" + cr.Spec.Image.Tag
+	if ai := cr.Spec.AI; ai != nil && ai.Image != nil {
+		if ai.Image.Repository != "" {
+			repo = ai.Image.Repository
+		}
+		if ai.Image.Tag != "" {
+			tag = ai.Image.Tag
+		}
+	}
+	return fmt.Sprintf("%s:%s", repo, tag)
+}
+
+// aiPullPolicy mirrors pullPolicy() but reads spec.ai.image.pullPolicy
+// when set; otherwise falls back to the default policy for the
+// resolved aiwatch tag.
+func aiPullPolicy(cr *chav1alpha1.ClusterHealthAutopilot) corev1.PullPolicy {
+	if ai := cr.Spec.AI; ai != nil && ai.Image != nil {
+		if ai.Image.PullPolicy != "" {
+			return corev1.PullPolicy(ai.Image.PullPolicy)
+		}
+		// Same mutable-tag heuristic the OSS pullPolicy() applies.
+		switch ai.Image.Tag {
+		case "latest", "main", "dev":
+			return corev1.PullAlways
+		}
+	}
+	// Use the OSS image's tag as a proxy when ai.image.tag isn't
+	// pinned — aiwatch defaults to the same semver, so the same
+	// policy is right.
+	return pullPolicy(cr.Spec.Image)
+}
+
+// AIEnabled reports whether spec.ai opts into the aiwatch Deployment.
+// Pulls the nil-guard into one place so callers don't repeat it.
+func AIEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
+	return cr.Spec.AI != nil && cr.Spec.AI.Enabled
+}
+
+// aiArgs builds the `cha-com watch` CLI flags from spec.ai. Mirrors
+// the chart's `cha.aiArgs` helper one-for-one — same flag names, same
+// defaults, same skip-when-empty semantics. Order is stable so tests
+// can match against a known sequence.
+func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
+	ai := cr.Spec.AI
+	tier := ai.Tier
+	if tier == "" {
+		tier = defaultAITier
+	}
+	interval := ai.Interval
+	if interval == "" {
+		interval = defaultAIInterval
+	}
+	args := []string{
+		"watch",
+		"--ai-tier=" + tier,
+		"--ai-endpoint=" + ai.Endpoint,
+		"--ai-model=" + ai.Model,
+		"--interval=" + interval,
+	}
+	if ai.APIKey != nil {
+		if ai.APIKey.Header != "" {
+			args = append(args, "--ai-api-key-header="+ai.APIKey.Header)
+		}
+		// envName defaults to AI_API_KEY but the chart only emits the
+		// flag when an explicit override is set. Match that — keeps
+		// the operator-managed install args byte-identical to the
+		// chart-managed install for the same CR.
+		if ai.APIKey.EnvName != "" {
+			args = append(args, "--ai-api-key-env="+ai.APIKey.EnvName)
+		}
+	}
+	if ai.AllowSaaS {
+		args = append(args, "--ai-allow-saas")
+	}
+	if ai.LLMFixerMatcher {
+		args = append(args, "--ai-llm-fixer-matcher")
+	}
+	if ai.AuditLog != "" {
+		args = append(args, "--ai-audit-log="+ai.AuditLog)
+	}
+	if ai.ApprovalServerURL != "" {
+		args = append(args, "--approval-server-url="+ai.ApprovalServerURL)
+	}
+	if ai.T3 != nil {
+		for _, p := range ai.T3.VaultAllowedPrefixes {
+			args = append(args, "--t3-vault-allowed-prefix="+p)
+		}
+	}
+	if mem := ai.Memory; mem != nil && mem.Enabled {
+		storeURL := mem.StoreURL
+		if storeURL == "" {
+			// Match the chart's in-namespace default. The operator
+			// hasn't stood up Qdrant yet (deferred to a follow-up),
+			// but if the user installed it via the chart in the same
+			// namespace, this URL resolves correctly.
+			storeURL = fmt.Sprintf("http://%s-rag.%s.svc:6333", cr.Name, cr.Namespace)
+		}
+		args = append(args, "--memory-store-url="+storeURL)
+		if mem.Embeddings != nil {
+			if mem.Embeddings.Endpoint != "" {
+				args = append(args, "--memory-embeddings-endpoint="+mem.Embeddings.Endpoint)
+			}
+			args = append(args, "--memory-embeddings-model="+mem.Embeddings.Model)
+		}
+		topK := mem.TopK
+		if topK == 0 {
+			topK = defaultAIMemoryTopK
+		}
+		args = append(args, fmt.Sprintf("--memory-topk=%d", topK))
+	}
+	return args
+}
+
+// aiEnv builds the env var slice for the aiwatch container. Just the
+// downward-API pair plus the LLM API-key secret reference; everything
+// else flows via flags. Mirrors the chart's `cha.aiEnv`.
+func aiEnv(cr *chav1alpha1.ClusterHealthAutopilot) []corev1.EnvVar {
+	env := []corev1.EnvVar{
+		{
+			Name: "MY_POD_NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"},
+			},
+		},
+		{
+			Name: "MY_POD_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		},
+	}
+	if k := cr.Spec.AI.APIKey; k != nil && k.SecretName != "" {
+		envName := k.EnvName
+		if envName == "" {
+			envName = defaultAIAPIKeyEnvName
+		}
+		secretKey := k.SecretKey
+		if secretKey == "" {
+			secretKey = defaultAIAPIKeySecretKey
+		}
+		env = append(env, corev1.EnvVar{
+			Name: envName,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: k.SecretName},
+					Key:                  secretKey,
+				},
+			},
+		})
+	}
+	return env
+}
+
+// BuildAIWatchDeployment returns the aiwatch Deployment for the CR, or
+// nil when AI is disabled. Mirrors `templates/aiwatch-deployment.yaml`:
+//   - serviceAccount = the CR's reader-bound SA (same one the watcher
+//     uses; aiwatch is read-only, every tier is recommendation-only
+//     behind human approval).
+//   - strategy = Recreate (the chart pins this — the aiwatch holds a
+//     leader lease and rolling-update double-runs would split-brain
+//     the approval-pair signing).
+//   - replicas = 1 (no operator override yet; matches the chart).
+//
+// Required fields surfaced by the validator: ai.endpoint, ai.model.
+// Empty memory.embeddings.model when memory.enabled is the only other
+// must-validate.
+func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Deployment {
+	if !AIEnabled(cr) {
+		return nil
+	}
+	names := NamesFor(cr)
+	labels := CommonLabels(cr, "aiwatch")
+	replicas := int32(1)
+
+	return &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      names.AIWatch,
+			Namespace: cr.Namespace,
+			Labels:    labels,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{
+					ServiceAccountName: ServiceAccountNameFor(cr),
+					ImagePullSecrets:   pullSecretRefs(aiPullSecrets(cr)),
+					Containers: []corev1.Container{
+						{
+							Name:            "aiwatch",
+							Image:           aiImageRef(cr),
+							ImagePullPolicy: aiPullPolicy(cr),
+							Args:            aiArgs(cr),
+							Env:             aiEnv(cr),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// aiPullSecrets honors `spec.ai.image.pullSecrets` when set; otherwise
+// falls back to the OSS image's pullSecrets (the chart-managed install
+// applies the same list to both images via .Values.image.pullSecrets,
+// so this keeps parity for callers that don't differentiate).
+func aiPullSecrets(cr *chav1alpha1.ClusterHealthAutopilot) []string {
+	if ai := cr.Spec.AI; ai != nil && ai.Image != nil && len(ai.Image.PullSecrets) > 0 {
+		return ai.Image.PullSecrets
+	}
+	return cr.Spec.Image.PullSecrets
 }
