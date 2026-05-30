@@ -69,16 +69,14 @@ type ClusterHealthAutopilotSpec struct {
 	AI *AISpec `json:"ai,omitempty"`
 
 	// ServiceAccountName overrides the controller-managed SA name.
-	// When empty the controller creates and owns <cr-name>-sa.
+	// When empty the controller creates `<cr-name>-sa` AND provisions a
+	// cluster-wide reader ClusterRoleBinding for it (Phase 1c — see
+	// `BuildReaderClusterRoleBinding`). So an operator-managed install
+	// works greenfield without any chart-installed RBAC.
 	//
-	// IMPORTANT (RBAC): the operator does not yet provision a reader
-	// ClusterRoleBinding for the SA it creates, so the default
-	// <cr-name>-sa has NO probe RBAC and the watcher would get
-	// `forbidden` on every List. To run an operator-managed watcher
-	// today, set this to an existing reader-bound SA (e.g. the chart's
-	// `<release>-cluster-health-autopilot` SA). When set, the operator
-	// references but does NOT create or own that SA. Operator-owned
-	// RBAC is tracked for Phase 1c.
+	// When set, the operator binds the named (BYO) ServiceAccount to
+	// the shared reader ClusterRole but does NOT create or own the SA
+	// itself — the SA lifecycle belongs to whoever defined it.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
