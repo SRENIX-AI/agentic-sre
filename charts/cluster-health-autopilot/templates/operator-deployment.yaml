@@ -25,9 +25,14 @@ metadata:
     {{- include "cha.labels" . | nindent 4 }}
 rules:
   # ClusterHealthAutopilot CR + status subresource.
+  # `update,patch` on the main resource are required to add/remove
+  # FinalizerOperatorRBAC; the /finalizers subresource verb alone is
+  # for OwnerReference cross-namespace GC and does NOT cover plain
+  # finalizer-list edits. Bundle-smoke caught this when the reconciler
+  # 403'd on `add finalizer` after the cache start-up.
   - apiGroups: ["cha.bionicaisolutions.com"]
     resources: ["clusterhealthautopilots"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["cha.bionicaisolutions.com"]
     resources: ["clusterhealthautopilots/status"]
     verbs: ["get", "patch", "update"]

@@ -99,9 +99,16 @@ spec:
         - serviceAccountName: cha-operator-sa
           rules:
             # ClusterHealthAutopilot CR + status + finalizers.
+            # `update,patch` on the main resource are required so the
+            # reconciler can add/remove FinalizerOperatorRBAC; the
+            # /finalizers subresource verb alone is for OwnerReference
+            # cross-namespace GC and does NOT cover plain
+            # metadata.finalizers edits. Mirror the chart's operator
+            # ClusterRole — TestBundle_CSVAndChartRBACInLockstep
+            # enforces the parity.
             - apiGroups: ["cha.bionicaisolutions.com"]
               resources: ["clusterhealthautopilots"]
-              verbs: ["get", "list", "watch"]
+              verbs: ["get", "list", "watch", "update", "patch"]
             - apiGroups: ["cha.bionicaisolutions.com"]
               resources: ["clusterhealthautopilots/status"]
               verbs: ["get", "patch", "update"]
