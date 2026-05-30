@@ -39,7 +39,16 @@ serves the latest tagged chart cut.
 
 - Stale package docs in `pkg/cloud/gcp/client.go` and `pkg/cloud/azure/client.go` that claimed "Live wrapper deferred to a follow-up PR" — both Live wrappers shipped (v1.7 baseline; v1.9 Cloud Monitoring / Azure Monitor / BackendHealth LRO additions in PRs #103–#106). Comments now reflect what's on `main`.
 
-(Reserve for v1.9+ — operator Phase 1c per `docs/design/2026-05-v1.9-operator-phase-1c.md`; Phase 2 reconciler consumption of the AISpec above; remaining cloud Monitoring-API signals; trigger-classes C/E.)
+### Added — `Silence` CRD + watch-loop suppression
+
+- New `Silence` CRD (`silences.cha.bionicaisolutions.com`, namespace-scoped, `sil` short name). Operators create a Silence to mute a known-benign-but-unfixable finding for a bounded window. Matcher fields: `source` / `subject` / `severity` (empty = wildcard); CRD validation rejects an entirely-empty matcher. `spec.until` is required; past expiry the Silence becomes a no-op but is NOT auto-deleted (audit trail). Optional `reason` + `createdBy` for "why is this muted?" answers.
+- New pure `pkg/silence.Filter()` + `Matches()` — namespaced lookup, exact-field matching, expired-silence-never-matches guard. Order-preserving, doesn't mutate the caller's slice. 8 unit tests.
+- New `pkg/silence.K8sLister` (dynamic-client backed) lists active Silences cluster-wide once per watcher cycle. Soft-fails on a missing CRD (returns nil, nil) so a chart < 1.9 install still works.
+- Watcher integration: `Watcher.WithSilenceLister(lister)` — wired in `cmd/cha/main.go`. Silenced diagnostics are dropped in `runDiagnose()` BEFORE downstream emission (DriftReport / Slack / Alertmanager / ticketing), so a muted finding never re-pages.
+- Chart: `templates/crd-silence.yaml` (gated on `silence.installCRD`, default ON) + `templates/clusterrole-silence.yaml` (cluster-wide list/watch on `silences`, gated on `silence.enabled`, default ON). Reserves `silences/status` write permission for a future matchCount/lastMatchAt updater.
+- Closes post-v1.9 adversarial-review finding #2: previously CHA had only endpoint-probe flake debounce — no user-controlled per-fingerprint, time-bounded suppression. Now Silence is a first-class, K8s-native concept matching the Alertmanager-silences pattern.
+
+(Reserve for v1.9+ — operator Phase 1c per `docs/design/2026-05-v1.9-operator-phase-1c.md`; Phase 2 reconciler consumption of the AISpec; remaining cloud Monitoring-API signals; trigger-classes C/E.)
 
 ---
 

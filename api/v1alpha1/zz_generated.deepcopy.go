@@ -295,3 +295,105 @@ func (in *AIMemorySpec) DeepCopy() *AIMemorySpec {
 	in.DeepCopyInto(out)
 	return out
 }
+
+// --- Silence ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *Silence) DeepCopyInto(out *Silence) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	in.Spec.DeepCopyInto(&out.Spec)
+	in.Status.DeepCopyInto(&out.Status)
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *Silence) DeepCopy() *Silence {
+	if in == nil {
+		return nil
+	}
+	out := new(Silence)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject returns a runtime.Object copy of the receiver.
+func (in *Silence) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+// --- SilenceList ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *SilenceList) DeepCopyInto(out *SilenceList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		out.Items = make([]Silence, len(in.Items))
+		for i := range in.Items {
+			in.Items[i].DeepCopyInto(&out.Items[i])
+		}
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *SilenceList) DeepCopy() *SilenceList {
+	if in == nil {
+		return nil
+	}
+	out := new(SilenceList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject returns a runtime.Object copy of the receiver.
+func (in *SilenceList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+// --- SilenceSpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *SilenceSpec) DeepCopyInto(out *SilenceSpec) {
+	*out = *in
+	out.Matcher = in.Matcher
+	in.Until.DeepCopyInto(&out.Until)
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *SilenceSpec) DeepCopy() *SilenceSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(SilenceSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- SilenceStatus ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *SilenceStatus) DeepCopyInto(out *SilenceStatus) {
+	*out = *in
+	if in.LastMatchAt != nil {
+		out.LastMatchAt = new(metav1.Time)
+		in.LastMatchAt.DeepCopyInto(out.LastMatchAt)
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *SilenceStatus) DeepCopy() *SilenceStatus {
+	if in == nil {
+		return nil
+	}
+	out := new(SilenceStatus)
+	in.DeepCopyInto(out)
+	return out
+}

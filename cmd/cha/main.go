@@ -41,9 +41,30 @@ import (
 	cloudpkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
 	cloudpkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
 	cloudpkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/silence"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing/openproject"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
+
+// buildKubeConfigForSilence returns a rest.Config built the same way
+// snapshot.LoadLive does (in-cluster first, then explicit kubeconfig,
+// then default loading rules). Kept local so cmd/cha doesn't depend
+// on internal/snapshot's unexported `buildConfig`. nil error = ready
+// to construct a dynamic.Interface.
+func buildKubeConfigForSilence(kubeconfigPath string) (*rest.Config, error) {
+	if kubeconfigPath != "" {
+		return clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	}
+	if c, err := rest.InClusterConfig(); err == nil {
+		return c, nil
+	}
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	cc := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{})
+	return cc.ClientConfig()
+}
 
 // version is overridden at build time via -ldflags "-X main.version=v0.1.0".
 var version = "dev"
@@ -583,6 +604,16 @@ the post-fix cluster state.`,
 				CloudCadence:           cloudCadence,
 			}
 			w := watcher.New(lv, reg, mut, cfg)
+			// Wire the Silence lister so the watcher drops matched
+			// diagnostics before downstream emission. Soft-fail: a
+			// missing CRD / forbidden list just means no filtering
+			// (the Lister returns nil + nil), so this is safe to
+			// always enable.
+			if cfg, kcErr := buildKubeConfigForSilence(kubeconfig); kcErr == nil {
+				if dyn, dErr := dynamic.NewForConfig(cfg); dErr == nil {
+					w = w.WithSilenceLister(silence.NewK8sLister(dyn))
+				}
+			}
 			// Sprint 4.3 — wrap Run in leader election. When the env says
 			// off, LeaderConfig.Disabled is set and the body runs straight
 			// through.

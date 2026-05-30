@@ -47,6 +47,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(GroupVersion,
 		&ClusterHealthAutopilot{},
 		&ClusterHealthAutopilotList{},
+		&Silence{},
+		&SilenceList{},
 	)
 	return nil
 }
