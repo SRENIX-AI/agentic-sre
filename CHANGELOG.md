@@ -13,7 +13,12 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-(Reserve for v1.9+ — config / capacity metrics-server-dependent signals, the cloud Monitoring-API wiring that turns the "not measured" signals below into live metrics, operator Phase 1c (operator-provisioned reader ClusterRoleBinding + OLM bundle), trigger-classes C/E.)
+### Added — GCP Cloud Monitoring wiring for Cloud SQL disk utilization (P4/G9, vertical slice)
+
+- `internal/cloud/gcp`: new `monitoringQuerier` interface + `cloudMonitoringQuerier` impl backed by `google.golang.org/api/monitoring/v3`. Queries `cloudsql.googleapis.com/database/disk/utilization` (ALIGN_MEAN over a 5-min window) and converts the 0..1 fraction to a 0..100 integer percent. `LiveClient.ListCloudSQLInstances` now populates `DiskUsedPercent` from this querier when available, falling back to the `-1` "not measured" sentinel on a query failure or missing time-series. `monitoring.NewService` failures are non-fatal — the wrapper proceeds without Monitoring rather than failing install on partial credential grants. Unit-tested response parsing covers nil / empty / multi-point / round-to-nearest / over-100 cap / negative-defensive cases.
+- Same pattern (interface + injectable querier + best-effort fallback) is now the template for the remaining "not measured" signals: GCP `AvailableIPCount`, Azure storage / IP-pool / AppGW backend health.
+
+(Reserve for v1.9+ — remaining cloud Monitoring-API signals, operator Phase 1c (operator-provisioned reader ClusterRoleBinding + OLM bundle), trigger-classes C/E.)
 
 ---
 

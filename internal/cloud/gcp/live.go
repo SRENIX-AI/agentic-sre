@@ -14,6 +14,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	container "google.golang.org/api/container/v1"
 	iam "google.golang.org/api/iam/v1"
+	monitoring "google.golang.org/api/monitoring/v3"
 	sqladmin "google.golang.org/api/sqladmin/v1"
 	storage "google.golang.org/api/storage/v1"
 )
@@ -43,6 +44,12 @@ type LiveClient struct {
 	iam       *iam.Service
 	storage   *storage.Service
 	kms       *kms.Service
+
+	// monitor populates time-series-only signals (Cloud SQL disk usage
+	// etc.) that the SQL Admin / Compute APIs don't expose directly. nil
+	// is acceptable — callers fall back to the "not measured" sentinel
+	// (DiskUsedPercent = -1), preserving the v1.8.x posture.
+	monitor monitoringQuerier
 }
 
 // NewLiveClient constructs a Live GCP client bound to project+region.
@@ -76,6 +83,14 @@ func NewLiveClient(ctx context.Context, project, region string) (*LiveClient, er
 	if err != nil {
 		return nil, fmt.Errorf("gcp: kms: %w", err)
 	}
+	// Cloud Monitoring is best-effort: if NewService fails (no Monitoring
+	// Viewer role, network blocked, etc.) we proceed without it and fall
+	// back to the "not measured" sentinel for time-series-only signals.
+	// This preserves install-success on partial credential grants.
+	var monitor monitoringQuerier
+	if monSvc, mErr := monitoring.NewService(ctx); mErr == nil {
+		monitor = newCloudMonitoringQuerier(monSvc, project)
+	}
 	return &LiveClient{
 		project:   project,
 		region:    region,
@@ -85,6 +100,7 @@ func NewLiveClient(ctx context.Context, project, region string) (*LiveClient, er
 		iam:       iamSvc,
 		storage:   storageSvc,
 		kms:       kmsSvc,
+		monitor:   monitor,
 	}, nil
 }
 
@@ -108,14 +124,23 @@ func (l *LiveClient) ListCloudSQLInstances(ctx context.Context) ([]pkggcp.CloudS
 			State:           in.State,
 			Region:          in.Region,
 			ConnectionName:  in.ConnectionName,
-			// DiskUsedPercent is NOT available from the SQL Admin
-			// instances.list response — it requires the Cloud
-			// Monitoring API (cloudsql.googleapis.com/database/disk/
-			// utilization). -1 = "not measured"; the probe skips the
-			// storage-utilization check rather than treating it as 0%
-			// (which would silently never fire). Real wiring is a v1.9
-			// Monitoring-API follow-up.
+			// DiskUsedPercent comes from Cloud Monitoring time-series
+			// (the SQL Admin response doesn't carry it). G9: queried
+			// here from monitoring.googleapis.com/cloudsql.googleapis
+			// .com/database/disk/utilization. The querier returns -1
+			// when no recent point exists (fresh instance / lag /
+			// Monitoring API not reachable) — the probe then skips
+			// the storage check rather than treating it as 0%.
 			DiskUsedPercent: -1,
+		}
+		if l.monitor != nil {
+			if pct, mErr := l.monitor.CloudSQLDiskUsedPercent(ctx, in.Name); mErr == nil {
+				inst.DiskUsedPercent = pct
+			}
+			// Monitoring errors are swallowed: a query failure leaves
+			// DiskUsedPercent at -1 (skip the check), same posture as
+			// "not measured." A noisy probe is worse than a quiet one
+			// for a non-critical signal.
 		}
 		if in.Settings != nil {
 			inst.Tier = in.Settings.Tier
