@@ -37,6 +37,7 @@ import (
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/silence"
 )
 
 // Config controls all tunable watcher behaviours.
@@ -164,6 +165,12 @@ type Watcher struct {
 	mut snapshot.Mutator // nil when remediation is disabled
 	cfg Config
 
+	// silences fetches the active Silence CRD set once per cycle to
+	// suppress matched diagnostics before downstream emission. nil =
+	// no filtering (Silence CRD not installed / chart < 1.9 / opted
+	// out at startup).
+	silences silence.Lister
+
 	mu          sync.Mutex
 	seen        map[string]*seenEntry
 	pendingURLs map[string]pendingURL // ai-tier approval URLs by ActionID
@@ -184,6 +191,14 @@ func New(lv *snapshot.Live, reg *registry.Registry, mut snapshot.Mutator, cfg Co
 		cfg:  cfg,
 		seen: make(map[string]*seenEntry),
 	}
+}
+
+// WithSilenceLister sets the per-cycle Silence source. Wired by the
+// main binary AFTER New() so existing callers (and tests) stay
+// untouched. Pass nil to disable filtering.
+func (w *Watcher) WithSilenceLister(l silence.Lister) *Watcher {
+	w.silences = l
+	return w
 }
 
 // Run starts the watch loop and blocks until ctx is cancelled.
@@ -442,6 +457,10 @@ func (w *Watcher) runCycle(ctx context.Context) {
 }
 
 // runDiagnose runs all registered probes and analyzers and returns their results.
+// Diagnostics matched by an active Silence CR are dropped before return — the
+// downstream emitters (DriftReport, Slack, Alertmanager, ticketing) never see
+// a silenced finding, so a known-benign-but-unfixable issue doesn't re-page on
+// every probe cycle.
 func (w *Watcher) runDiagnose(ctx context.Context) ([]probe.Result, []diagnose.Diagnostic) {
 	results := make([]probe.Result, 0, len(w.reg.Probes()))
 	for _, p := range w.reg.Probes() {
@@ -450,6 +469,20 @@ func (w *Watcher) runDiagnose(ctx context.Context) ([]probe.Result, []diagnose.D
 	var diags []diagnose.Diagnostic
 	for _, a := range w.reg.Analyzers() {
 		diags = append(diags, a.Run(ctx, w.lv)...)
+	}
+	// Silence filter (pre-emission). Soft-fail: a list error is logged
+	// once + filtering is skipped for this cycle rather than dropping
+	// findings on the floor.
+	if w.silences != nil {
+		if sil, err := w.silences.List(ctx); err == nil {
+			before := len(diags)
+			diags = silence.Filter(diags, sil, time.Now())
+			if dropped := before - len(diags); dropped > 0 {
+				log.Printf("watcher: silenced %d/%d diagnostics this cycle", dropped, before)
+			}
+		} else {
+			log.Printf("watcher: silence list failed (filtering skipped this cycle): %v", err)
+		}
 	}
 	return results, diags
 }

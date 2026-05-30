@@ -1,0 +1,43 @@
+{{- if (.Values.silence).enabled }}
+# Silence ClusterRole.
+#
+# The watcher fetches active Silence CRs once per cycle to suppress
+# matched diagnostics. List/watch CLUSTER-WIDE so operators can create
+# silences in any namespace (typically alongside the affected workload)
+# and have CHA honor them — same UX shape as Alertmanager silences.
+#
+# READ-ONLY. CHA never creates or mutates Silence resources itself;
+# operators own their lifecycle (kubectl create / delete / patch).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cha.fullname" . }}-silence
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["silences"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cha.bionicaisolutions.com"]
+    resources: ["silences/status"]
+    # Reserved for a future status-updater (matchCount / lastMatchAt).
+    # Status writes are gated behind a separate flag in v1.10+; the
+    # verb is granted now so a chart upgrade isn't required when that
+    # ships.
+    verbs: ["update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cha.fullname" . }}-silence
+  labels:
+    {{- include "cha.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cha.fullname" . }}-silence
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cha.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
