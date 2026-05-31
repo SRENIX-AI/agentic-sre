@@ -39,12 +39,21 @@ rules:
   - apiGroups: ["cha.bionicaisolutions.com"]
     resources: ["clusterhealthautopilots/finalizers"]
     verbs: ["update"]
-  # Managed children: ServiceAccount, Deployment, CronJob.
+  # Managed children: ServiceAccount, Service (Qdrant), Deployment,
+  # StatefulSet (Qdrant), CronJob. PersistentVolumeClaims are managed
+  # transitively by the Qdrant StatefulSet's volumeClaimTemplates so
+  # the operator doesn't need pvc verbs.
   - apiGroups: [""]
     resources: ["serviceaccounts"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["batch"]
     resources: ["cronjobs"]
