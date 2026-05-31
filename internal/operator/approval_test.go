@@ -395,6 +395,68 @@ func TestReconcile_ApprovalReady_FlipsConditionTrue(t *testing.T) {
 	}
 }
 
+func TestReconcile_ApprovalInmemory_MultipleReplicas_ReadyFalse(t *testing.T) {
+	// GAP fix: replicas>1 with inmemory store must be rejected at validation
+	// time rather than silently creating a split-brain approval fleet.
+	cr := approvalCR()
+	cr.Spec.Approval.Replicas = 3
+	// Store is nil/default = inmemory.
+	r, c := newReconciler(t, cr)
+	reconcileOnce(t, r, cr)
+
+	cond := readReadyCondition(t, c, cr)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "InvalidSpec" {
+		t.Errorf("expected Ready=False/InvalidSpec for replicas>1+inmemory; got %+v", cond)
+	}
+}
+
+func TestReconcile_ApprovalConfigmap_MultipleReplicasAllowed(t *testing.T) {
+	// configmap backend is safe for replicas>1 — state is shared.
+	cr := approvalCR()
+	cr.Spec.Approval.Replicas = 2
+	cr.Spec.Approval.Store = &chav1alpha1.ApprovalStoreSpec{Backend: "configmap"}
+	r, c := newReconciler(t, cr)
+	reconcileOnce(t, r, cr)
+	reconcileOnce(t, r, cr)
+
+	// Must not land on InvalidSpec.
+	cond := readReadyCondition(t, c, cr)
+	if cond != nil && cond.Reason == "InvalidSpec" {
+		t.Errorf("configmap backend with replicas=2 should not fail validation; got %+v", cond)
+	}
+}
+
+func TestReconcile_ApprovalEnabled_SigningKeyUpdateIdempotentOnSecondReconcile(t *testing.T) {
+	// GAP fix: reconcileSigningKeySecret must NOT call r.Update() when the
+	// Secret already exists with correct labels (spurious update per reconcile).
+	cr := approvalCR()
+	r, c := newReconciler(t, cr)
+	reconcileOnce(t, r, cr)
+	reconcileOnce(t, r, cr)
+
+	// The Secret should exist with labels matching CommonLabels.
+	var sec corev1.Secret
+	if err := c.Get(context.Background(),
+		types.NamespacedName{Namespace: "cha-system", Name: "cha-approval-signing-key"},
+		&sec); err != nil {
+		t.Fatalf("signing-key Secret missing: %v", err)
+	}
+	rv1 := sec.ResourceVersion
+
+	// Third reconcile — labels already correct, no update should happen.
+	reconcileOnce(t, r, cr)
+
+	var sec2 corev1.Secret
+	_ = c.Get(context.Background(),
+		types.NamespacedName{Namespace: "cha-system", Name: "cha-approval-signing-key"},
+		&sec2)
+	if sec2.ResourceVersion != rv1 {
+		t.Errorf("signing-key Secret resourceVersion changed after no-op reconcile (%s→%s): "+
+			"spurious Update() not guarded by label-diff check",
+			rv1, sec2.ResourceVersion)
+	}
+}
+
 func TestReconcile_ApprovalDisabled_ApprovalConditionDisabled(t *testing.T) {
 	cr := fullCR()
 	r, c := newReconciler(t, cr)

@@ -158,6 +158,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, r.updateStatus(ctx, &cr)
 		}
 	}
+	if ApprovalEnabled(&cr) {
+		// The in-memory replay store is per-replica: each pod holds an
+		// independent set of consumed JTIs. Running >1 replica means
+		// an approval click routed to replica B is not deduped by
+		// replica A — a replay attack becomes possible for any JTI
+		// that only one replica has seen. The configmap backend shares
+		// state via K8s and is safe for replicas > 1. Fail fast so the
+		// operator never silently creates a split-brain approval fleet.
+		if approvalStoreBackend(&cr) == "inmemory" && approvalReplicas(&cr) > 1 {
+			r.markReady(&cr, metav1.ConditionFalse, "InvalidSpec",
+				"spec.approval.replicas must be 1 when spec.approval.store.backend=inmemory (default); "+
+					"set store.backend=configmap to run multiple replicas safely")
+			return ctrl.Result{}, r.updateStatus(ctx, &cr)
+		}
+	}
 
 	// 2. Reconcile each subresource. Collect errors so the
 	// status update reflects the partial state honestly.
@@ -567,8 +582,18 @@ func (r *Reconciler) reconcileSigningKeySecret(ctx context.Context, cr *chav1alp
 	var existing corev1.Secret
 	err := r.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: name}, &existing)
 	if err == nil {
-		// Already exists — leave it alone, just refresh labels.
-		mergeLabels(&existing.ObjectMeta, CommonLabels(cr, "approval-server"))
+		// Already exists — never touch the key bytes. Refresh labels
+		// only when they've actually drifted, avoiding a spurious
+		// Update (and the resulting resourceVersion churn) every
+		// reconcile. This is especially important because the operator
+		// may run with multiple leader-election candidates; a no-op
+		// Update on every reconcile adds noise to audit logs and can
+		// trigger unnecessary watch events.
+		desired := CommonLabels(cr, "approval-server")
+		if labelsUpToDate(existing.Labels, desired) {
+			return nil
+		}
+		mergeLabels(&existing.ObjectMeta, desired)
 		return r.Update(ctx, &existing)
 	}
 	if !apierrors.IsNotFound(err) {
@@ -1015,6 +1040,18 @@ func setCondition(s *chav1alpha1.ClusterHealthAutopilotStatus, condType string, 
 		LastTransitionTime: now,
 		ObservedGeneration: gen,
 	})
+}
+
+// labelsUpToDate returns true iff every key=value in desired is
+// already present in current. Extra keys in current are ignored —
+// users may add their own labels without them being wiped.
+func labelsUpToDate(current, desired map[string]string) bool {
+	for k, v := range desired {
+		if current[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // mergeLabels copies any controller-managed labels onto the live

@@ -239,6 +239,88 @@ jobs:
           kubectl get clusterrolebinding cha-operator-watcher-cha-system-smoke \
             -o jsonpath='{.subjects[0].name}' | grep -q '^smoke-sa$'
 
+      # ── Phase 2+ smoke (AI + approval-server objects) ──────────────────
+      # Purpose: verify the operator creates the full AI stack objects and
+      # runs the reconciler successfully (no InvalidSpec / ReconcileError).
+      # We do NOT wait for Ready=True because the smoke image is the OSS
+      # binary, not cha-com — aiwatch/approval pods stay in ErrImagePull.
+      # What we verify is that the operator exercised ALL reconcile code
+      # paths (Phase 2 aiwatch, Phase 2b Qdrant, Phase 2c approval-server
+      # RBAC + signing-key) without hitting a 403 or a validation error.
+      - name: Apply Phase 2+ sample CR (AI + approval-server enabled)
+        run: |
+          kubectl apply -f bundle/tests/sample-cr-ai.yaml
+
+      - name: Wait for Phase 2+ CR to appear in status
+        run: |
+          # We wait for the CR to have ANY status condition set (meaning
+          # the operator reconciled it at least once) rather than Ready=True
+          # (the cha-com pods won't start with the OSS smoke image).
+          # A 60s poll is sufficient — the operator reconciles within seconds
+          # of the CR being created.
+          for i in $(seq 1 12); do
+            CONDITIONS=$(kubectl -n cha-system get clusterhealthautopilot/smoke-ai \
+              -o jsonpath='{.status.conditions}' 2>/dev/null || echo "")
+            if [ -n "$CONDITIONS" ] && [ "$CONDITIONS" != "null" ] && [ "$CONDITIONS" != "[]" ]; then
+              echo "Status conditions set: $CONDITIONS"
+              break
+            fi
+            echo "Waiting for reconcile... ($i/12)"
+            sleep 5
+          done
+
+      - name: Verify Phase 2+ objects created by the operator
+        run: |
+          # approval-server ServiceAccount
+          kubectl -n cha-system get serviceaccount smoke-ai-approval-server
+          # approval-server Service
+          kubectl -n cha-system get service smoke-ai-approval-server
+          # approval-server Deployment (may not be running, but must exist)
+          kubectl -n cha-system get deployment smoke-ai-approval-server
+          # signing-key Secret — MUST have both PEM keys (the operator
+          # generates the Ed25519 keypair at reconcile time)
+          SIGNING_KEY=$(kubectl -n cha-system get secret cha-approval-signing-key \
+            -o jsonpath='{.data.signing\.key}' 2>/dev/null || echo "")
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "FAIL: signing-key Secret missing signing.key"
+            exit 1
+          fi
+          SIGNING_PUB=$(kubectl -n cha-system get secret cha-approval-signing-key \
+            -o jsonpath='{.data.signing\.pub}' 2>/dev/null || echo "")
+          if [ -z "$SIGNING_PUB" ]; then
+            echo "FAIL: signing-key Secret missing signing.pub"
+            exit 1
+          fi
+          echo "PASS: signing-key Secret has both PEM keys"
+          # approval-fixer ClusterRoleBinding (cluster-scoped, per-CR)
+          kubectl get clusterrolebinding cha-operator-approval-fixer-cha-system-smoke-ai \
+            -o jsonpath='{.subjects[0].name}' | grep -q '^smoke-ai-approval-server$'
+          echo "PASS: fixer ClusterRoleBinding targets approval-server SA"
+          # approval-fixer ClusterRole (shared, created by operator)
+          kubectl get clusterrole cha-operator-approval-fixer
+          echo "PASS: fixer ClusterRole exists"
+          # aiwatch Deployment (may not be running, but must exist)
+          kubectl -n cha-system get deployment smoke-ai-aiwatch
+
+      - name: Verify no InvalidSpec / ReconcileError condition on Phase 2+ CR
+        run: |
+          # If the operator hit a validation error (e.g., missing required
+          # field, bad RBAC verb) it would set Ready=False/InvalidSpec or
+          # Ready=False/ReconcileError. Either means a regression in the
+          # Phase 2+ reconcile path. ApprovalServerReady=False/
+          # NoAvailableReplicas is acceptable (pods can't start with smoke
+          # image), but InvalidSpec or ReconcileError is a hard failure.
+          READY_REASON=$(kubectl -n cha-system get clusterhealthautopilot/smoke-ai \
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}' 2>/dev/null || echo "NotSet")
+          echo "Ready.reason = $READY_REASON"
+          if [ "$READY_REASON" = "InvalidSpec" ] || [ "$READY_REASON" = "ReconcileError" ]; then
+            READY_MSG=$(kubectl -n cha-system get clusterhealthautopilot/smoke-ai \
+              -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null)
+            echo "FAIL: Ready.reason=$READY_REASON message=$READY_MSG"
+            exit 1
+          fi
+          echo "PASS: no InvalidSpec or ReconcileError on Phase 2+ CR"
+
       - name: Dump diagnostics on failure
         if: failure()
         run: |
@@ -246,8 +328,13 @@ jobs:
           kubectl -n cha-system get csv -o yaml
           echo "=== Operator pod logs ==="
           kubectl -n cha-system logs deploy/cha-operator --tail=200 || true
-          echo "=== CR + conditions ==="
+          echo "=== CR + conditions (watcher) ==="
           kubectl -n cha-system get clusterhealthautopilot/smoke -o yaml || true
+          echo "=== CR + conditions (AI+approval) ==="
+          kubectl -n cha-system get clusterhealthautopilot/smoke-ai -o yaml || true
+          echo "=== approval-server objects ==="
+          kubectl -n cha-system get deploy,svc,sa,secret -l app.kubernetes.io/instance=smoke-ai || true
+          kubectl get clusterrolebinding -l cha.bionicaisolutions.com/managed-by-cr=smoke-ai || true
           echo "=== InstallPlans ==="
           kubectl -n cha-system get installplans -o yaml || true
           echo "=== Subscriptions ==="
