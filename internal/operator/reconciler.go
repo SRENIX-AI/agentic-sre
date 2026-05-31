@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -144,6 +145,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 					"spec.ai.memory.storage.size: "+err.Error())
 				return ctrl.Result{}, r.updateStatus(ctx, &cr)
 			}
+		}
+	}
+	if ApprovalIngressEnabled(&cr) {
+		// The chart's approval-server-ingress.yaml `required`s host;
+		// match that here so an operator-managed install fails fast
+		// rather than producing a hostless Ingress (which would land
+		// but route nothing).
+		if cr.Spec.Approval.Ingress.Host == "" {
+			r.markReady(&cr, metav1.ConditionFalse, "InvalidSpec",
+				"spec.approval.ingress.host is required when spec.approval.ingress.enabled=true")
+			return ctrl.Result{}, r.updateStatus(ctx, &cr)
 		}
 	}
 
@@ -393,6 +405,7 @@ func (r *Reconciler) reconcileApprovalServer(ctx context.Context, cr *chav1alpha
 			n   string
 			ns  string
 		}{
+			{&networkingv1.Ingress{}, name, ns},
 			{&appsv1.Deployment{}, name, ns},
 			{&corev1.Service{}, name, ns},
 			{&corev1.ServiceAccount{}, name, ns},
@@ -510,12 +523,38 @@ func (r *Reconciler) reconcileApprovalServer(ctx context.Context, cr *chav1alpha
 	}
 
 	// 7. Deployment.
-	return r.createOrUpdate(ctx, desiredDep, func(current client.Object) {
+	if err := r.createOrUpdate(ctx, desiredDep, func(current client.Object) {
 		c := current.(*appsv1.Deployment)
 		c.Spec.Replicas = desiredDep.Spec.Replicas
 		c.Spec.Template = desiredDep.Spec.Template
 		c.Spec.Strategy = desiredDep.Spec.Strategy
 		mergeLabels(&c.ObjectMeta, desiredDep.Labels)
+	}); err != nil {
+		return fmt.Errorf("approval Deployment: %w", err)
+	}
+
+	// 8. Optional Ingress (Phase 2c-C). Disabled → tear down a stale
+	// Ingress object if one is left from a previous-spec.
+	desiredIng := BuildApprovalServerIngress(cr)
+	if desiredIng == nil {
+		return r.deleteIfExists(ctx, &networkingv1.Ingress{}, ns, name)
+	}
+	if err := controllerutilSetOwnerRef(cr, desiredIng, r.Scheme); err != nil {
+		return err
+	}
+	return r.createOrUpdate(ctx, desiredIng, func(current client.Object) {
+		c := current.(*networkingv1.Ingress)
+		c.Spec = desiredIng.Spec
+		// Annotations carry user-provided cert-manager / oauth2-proxy
+		// configuration — preserve any user-added annotations the
+		// operator doesn't manage by merging.
+		if c.Annotations == nil {
+			c.Annotations = map[string]string{}
+		}
+		for k, v := range desiredIng.Annotations {
+			c.Annotations[k] = v
+		}
+		mergeLabels(&c.ObjectMeta, desiredIng.Labels)
 	})
 }
 
@@ -934,16 +973,21 @@ func (r *Reconciler) updateStatus(ctx context.Context, cr *chav1alpha1.ClusterHe
 
 // SetupWithManager registers the reconciler with the controller-runtime
 // manager. Owns() the child resource types so changes to them requeue
-// the parent CR. Phase 2b adds StatefulSet + Service (for the RAG
-// Qdrant).
+// the parent CR. Phase 2b adds StatefulSet + Service (Qdrant). Phase
+// 2c-B adds Secret + Role + RoleBinding (approval-server). Phase 2c-C
+// adds Ingress (approval-server, optional).
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&chav1alpha1.ClusterHealthAutopilot{}, builder.WithPredicates()).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.Service{}).
+		Owns(&corev1.Secret{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&batchv1.CronJob{}).
+		Owns(&rbacv1.Role{}).
+		Owns(&rbacv1.RoleBinding{}).
+		Owns(&networkingv1.Ingress{}).
 		Complete(r)
 }
 

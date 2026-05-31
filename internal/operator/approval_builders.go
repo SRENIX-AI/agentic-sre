@@ -12,6 +12,7 @@ import (
 	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -637,3 +638,94 @@ func GenerateSigningKeySecret(cr *chav1alpha1.ClusterHealthAutopilot) (*corev1.S
 }
 
 func int32Ptr(i int32) *int32 { return &i }
+
+// ApprovalIngressEnabled reports whether spec.approval.ingress.enabled
+// is true. Both `spec.approval` and `spec.approval.ingress` must be
+// non-nil first.
+func ApprovalIngressEnabled(cr *chav1alpha1.ClusterHealthAutopilot) bool {
+	return ApprovalEnabled(cr) &&
+		cr.Spec.Approval.Ingress != nil &&
+		cr.Spec.Approval.Ingress.Enabled
+}
+
+// BuildApprovalServerIngress returns the public-facing Ingress for the
+// approval-server, or nil when ingress is disabled. Mirrors the chart's
+// `templates/approval-server-ingress.yaml`:
+//   - Two paths: `/approve` (the SRE click endpoint) + `/healthz`
+//     (so the upstream LB / cert-manager probe can validate the route).
+//     Both route to the same approval-server Service on its `http`
+//     port (8443 — the binary listens HTTP and lets the Ingress
+//     terminate TLS).
+//   - Optional TLS block with a Secret reference.
+//   - User-provided annotations pass through verbatim
+//     (cert-manager, oauth2-proxy, kong, etc.).
+//
+// The Host field is required at the reconciler door (validated there);
+// the builder assumes a non-empty value.
+func BuildApprovalServerIngress(cr *chav1alpha1.ClusterHealthAutopilot) *networkingv1.Ingress {
+	if !ApprovalIngressEnabled(cr) {
+		return nil
+	}
+	ing := cr.Spec.Approval.Ingress
+	labels := CommonLabels(cr, "approval-server")
+
+	pathType := networkingv1.PathTypePrefix
+	rules := []networkingv1.IngressRule{
+		{
+			Host: ing.Host,
+			IngressRuleValue: networkingv1.IngressRuleValue{
+				HTTP: &networkingv1.HTTPIngressRuleValue{
+					Paths: []networkingv1.HTTPIngressPath{
+						{
+							Path:     "/approve",
+							PathType: &pathType,
+							Backend: networkingv1.IngressBackend{
+								Service: &networkingv1.IngressServiceBackend{
+									Name: ApprovalServerName(cr),
+									Port: networkingv1.ServiceBackendPort{Name: "http"},
+								},
+							},
+						},
+						{
+							Path:     "/healthz",
+							PathType: &pathType,
+							Backend: networkingv1.IngressBackend{
+								Service: &networkingv1.IngressServiceBackend{
+									Name: ApprovalServerName(cr),
+									Port: networkingv1.ServiceBackendPort{Name: "http"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	out := &networkingv1.Ingress{
+		TypeMeta: metav1.TypeMeta{APIVersion: "networking.k8s.io/v1", Kind: "Ingress"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        ApprovalServerName(cr),
+			Namespace:   cr.Namespace,
+			Labels:      labels,
+			Annotations: ing.Annotations,
+		},
+		Spec: networkingv1.IngressSpec{
+			Rules: rules,
+		},
+	}
+	if ing.IngressClassName != "" {
+		ic := ing.IngressClassName
+		out.Spec.IngressClassName = &ic
+	}
+	if ing.TLS != nil && ing.TLS.Enabled {
+		secretName := ing.TLS.SecretName
+		if secretName == "" {
+			secretName = ApprovalServerName(cr) + "-tls"
+		}
+		out.Spec.TLS = []networkingv1.IngressTLS{
+			{Hosts: []string{ing.Host}, SecretName: secretName},
+		}
+	}
+	return out
+}
