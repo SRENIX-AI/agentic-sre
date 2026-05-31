@@ -104,6 +104,13 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 		}
 		if d.ApprovalURL != "" {
 			annotations["proposed_fix_url"] = d.ApprovalURL
+			// Symmetric deny URL (cha-com #17 symmetric one-shot
+			// tokens). The Slack/email template renders both buttons
+			// so the SRE has a one-click Deny alongside Approve.
+			// Whichever endpoint the JTI lands at first wins; the
+			// other is burned. Denial records a RAG outcome so the
+			// proposer learns from rejections.
+			annotations["proposed_deny_url"] = strings.Replace(d.ApprovalURL, "/approve?", "/deny?", 1)
 		}
 		if d.ProposedActionID != "" {
 			annotations["proposed_action_id"] = d.ProposedActionID

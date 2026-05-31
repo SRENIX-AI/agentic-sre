@@ -83,7 +83,14 @@ func FormatSlackDelta(
 				fmt.Fprintf(&b, "  🤖 _%s_\n", d.Enrichment)
 			}
 			if d.ApprovalURL != "" {
-				fmt.Fprintf(&b, "  <%s|Apply Fix> · <%s&action=info|Details>\n", d.ApprovalURL, d.ApprovalURL)
+				// Render symmetric Approve / Deny pair. The deny URL
+				// shares the JTI with approve (cha-com #17 symmetric
+				// one-shot tokens) — whichever the SRE clicks first
+				// wins, the other is burned. Denial records a RAG
+				// outcome so the proposer learns from rejections.
+				denyURL := strings.Replace(d.ApprovalURL, "/approve?", "/deny?", 1)
+				fmt.Fprintf(&b, "  ✅ <%s|Approve> · ❌ <%s|Deny> · 📄 <%s&action=info|Details>\n",
+					d.ApprovalURL, denyURL, d.ApprovalURL)
 			}
 		}
 	}
