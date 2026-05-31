@@ -68,6 +68,12 @@ rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Optional approval-server Ingress (Phase 2c-C). Only reconciled
+  # when spec.approval.ingress.enabled=true; gating the verb itself
+  # would over-complicate the chart for a single resource.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Leader-election Lease (manager will create on startup).
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
