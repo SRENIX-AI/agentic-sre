@@ -243,6 +243,18 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
 		},
 		{
+			// /status subresources need their own rule — K8s treats
+			// subresources independently for RBAC. Mirrors the helm
+			// chart's clusterrole-driftreport.yaml posture. Without
+			// these verbs the watcher emits "cannot patch resource
+			// driftreports/status" each cycle even after #139 fix
+			// added the parent driftreports verbs (v1.12.2 closes the
+			// status-subresource gap that v1.12.1 missed).
+			APIGroups: []string{"cha.bionicaisolutions.com"},
+			Resources: []string{"driftreports/status", "resolutionrecords/status"},
+			Verbs:     []string{"update", "patch"},
+		},
+		{
 			APIGroups: []string{"cha.bionicaisolutions.com"},
 			Resources: []string{"silences"},
 			Verbs:     []string{"get", "list", "watch"},
