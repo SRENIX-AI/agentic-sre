@@ -222,7 +222,7 @@ func failedOrderChallenge(ctx context.Context, src snapshot.Source, ns, crName s
 }
 
 // extractACMEDomain parses the domain from an ACME error reason string.
-// e.g. "acme: authorization error for dashboard.baisoln.com: 400 ..."
+// e.g. "acme: authorization error for foo.example.com: 400 ..."
 func extractACMEDomain(reason string) string {
 	const marker = "authorization error for "
 	idx := strings.Index(reason, marker)

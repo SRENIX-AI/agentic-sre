@@ -52,7 +52,7 @@ type Config struct {
 	// WebURLPrefix is the operator-facing base URL of OpenProject up to
 	// (but not including) the work-package path segment. CHA appends
 	// "/work_packages/<id>" to build the TicketRef.URL. Example:
-	// "https://op.bionicaisolutions.com". Empty leaves TicketRef.URL
+	// "https://openproject.example.com". Empty leaves TicketRef.URL
 	// blank — operators can still open the ticket via key.
 	WebURLPrefix string
 

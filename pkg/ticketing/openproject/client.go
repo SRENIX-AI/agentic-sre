@@ -48,7 +48,7 @@ type MCPClient interface {
 type HTTPClient struct {
 	// Endpoint is the full URL to the MCP streamable-HTTP endpoint,
 	// e.g. http://mcp-openproject-server.mcp.svc:8006/mcp or
-	// https://mcp.baisoln.com/openproject/mcp.
+	// https://mcp.example.com/openproject/mcp.
 	Endpoint string
 
 	// APIKey is the Kong key-auth value sent as the apikey header.

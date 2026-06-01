@@ -348,26 +348,24 @@ func unwrapErr(err error) string {
 }
 
 // DefaultEndpointTargets returns the canonical set of public-facing endpoints
-// for this cluster — apex domains with strict status-code contracts, plus any
-// host whose probe identity benefits from an explicit display name.
+// to probe. CHA OSS ships with an EMPTY default — bundling specific hostnames
+// here would silently make every OSS install probe whichever organization's
+// domains were baked in at build time. That's a cluster-leak.
 //
-// Ingress-exposed hosts not listed here are picked up automatically by
-// DiscoverIngressTargets at Run time. Add a host to this set when you need a
-// strict ExpectStatus contract or an externally-hosted endpoint that has no
-// matching Ingress in the cluster (e.g. apex domains served via Cloudflare).
+// Sources of probe targets, in precedence order:
+//
+//  1. spec.probe.endpointTargets on the ClusterHealthAutopilot CR — operator-
+//     supplied for the current cluster.
+//  2. DiscoverIngressTargets at Run time — every Ingress host in the cluster
+//     is auto-probed (transparent, no config).
+//  3. (Phase 2d, paid AI tier) Cluster RAG memory learns apex / Cloudflare-only
+//     domains by walking the CF zone listing on the first analyzer run and
+//     persisting them under `kind=apex_domain` for replay across cycles.
 //
 // Extend: Endpoints{Targets: append(DefaultEndpointTargets(), myExtra...)}
 // Replace: Endpoints{Targets: myTargets, Discovery: probe.DiscoveryOptions{}}
 func DefaultEndpointTargets() []EndpointTarget {
-	return []EndpointTarget{
-		{URL: "https://bionicaisolutions.com", Name: "Bionic AI Solutions (apex)", ExpectStatus: 200},
-		{URL: "https://www.bionicaisolutions.com", Name: "Bionic AI Solutions (www)", ExpectStatus: 200},
-		{URL: "https://baisoln.com", Name: "baisoln.com (apex)", ExpectStatus: 200},
-		{URL: "https://www.baisoln.com", Name: "baisoln.com (www)", ExpectStatus: 200},
-		{URL: "https://auth.bionicaisolutions.com", Name: "Keycloak Auth"},
-		{URL: "https://platform.baisoln.com", Name: "Bionic Platform"},
-		{URL: "https://mail.bionicaisolutions.com", Name: "Mail Service"},
-	}
+	return nil
 }
 
 // DefaultEndpointHostnames returns the hostnames from DefaultEndpointTargets.
