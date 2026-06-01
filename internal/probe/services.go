@@ -141,42 +141,27 @@ func podIsReady(pod map[string]any) bool {
 	return true
 }
 
-// DefaultTargets returns the same list as the bash CRITICAL_SERVICES array
-// at cluster-health-report.sh:130-167. Provided as a default; callers can
-// override via config in a future release.
+// DefaultTargets returns the OSS-default ServiceTarget list. CHA OSS ships
+// EMPTY — bundling specific workload selectors here would silently make
+// every install probe whichever organization's apps were baked in at build
+// time. That's a cluster-leak. The pre-1.10.5 default list was a CHA-
+// development-cluster fixture (Letta + MCP fan-out + LiveKit + web app
+// selectors) that never belonged in OSS.
+//
+// Sources of ServiceTargets in production, in precedence order:
+//
+//  1. Auto-discovery — every Deployment/StatefulSet in the cluster is already
+//     a candidate. Critical-service probes are derived from workload state
+//     (ReadyReplicas vs Replicas, restart counts, last-seen ready).
+//  2. (Phase 2d, paid AI tier) Cluster RAG memory learns workload importance
+//     from observation: traffic patterns, label hints (`tier: critical`),
+//     finding-history (workloads that have been Approved/Denied by SREs).
+//     The learned set replays as ServiceTargets each cycle.
+//  3. Operator-supplied override — a future spec.probe.serviceTargets field
+//     on the CR will let SREs hand-curate when needed (rare).
+//
+// Callers that want a literal target list can still pass one in directly via
+// the Services{Targets: ...} field — that path is unchanged.
 func DefaultTargets() []ServiceTarget {
-	return []ServiceTarget{
-		{"redis", "app=redis-cluster-ceph", "Redis Cluster"},
-		{"kong", "app.kubernetes.io/name=kong", "Kong Gateway"},
-		{"langfuse", "app=web", "Langfuse Web"},
-		{"letta", "app.kubernetes.io/name=letta-server", "Letta AI Server"},
-		{"letta", "app.kubernetes.io/name=falkordb", "FalkorDB (Letta)"},
-		{"letta", "app.kubernetes.io/name=graphiti-service", "Graphiti (Letta)"},
-		{"letta", "app.kubernetes.io/name=media-bridge", "Media Bridge (Letta)"},
-		{"search-infrastructure", "app=searxng", "SearXNG Search"},
-		{"search-infrastructure", "app=crawl4ai", "Crawl4AI"},
-		{"mcp", "app=search-mcp-server", "Search MCP"},
-		{"mcp", "app=mcp-letta-server", "Letta MCP"},
-		{"mcp", "app=mcp-postgres-server", "Postgres MCP"},
-		{"mcp", "app=mcp-redis-server", "Redis MCP"},
-		{"mcp", "app=mcp-minio-server", "MinIO MCP"},
-		{"mcp", "app=mcp-ai-mcp-server", "AI MCP"},
-		{"mcp", "app=mcp-calculator-server", "Calculator MCP"},
-		{"mcp", "app=mcp-ffmpeg-server", "FFmpeg MCP"},
-		{"mcp", "app=mcp-genimage-server", "GenImage MCP"},
-		{"mcp", "app=mcp-langfuse-server", "Langfuse MCP"},
-		{"mcp", "app=mcp-mail-server", "Mail MCP"},
-		{"mcp", "app=mcp-meilisearch-server", "MeiliSearch MCP"},
-		{"mcp", "app=mcp-openproject-server", "OpenProject MCP"},
-		{"mcp", "app=mcp-pdf-generator-server", "PDF Generator MCP"},
-		{"livekit", "app=livekit-server", "LiveKit Server"},
-		{"livekit", "app=livekit-egress", "LiveKit Egress"},
-		{"livekit", "app=livekit-sip-server", "LiveKit SIP"},
-		{"vc-livekit", "app=backend", "VC Backend"},
-		{"vc-livekit", "app=frontend", "VC Frontend"},
-		{"vc-livekit", "app=livekit-agent", "VC LiveKit Agent"},
-		{"nextcloud", "app.kubernetes.io/name=nextcloud", "NextCloud"},
-		{"web", "app.kubernetes.io/name=baisoln-web", "Bionic Web"},
-		{"web", "app.kubernetes.io/name=contact-api", "Contact API"},
-	}
+	return nil
 }

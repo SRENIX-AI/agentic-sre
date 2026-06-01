@@ -31,12 +31,12 @@ type CloudflareClient interface {
 // Zone is a Cloudflare DNS zone (account-level container for DNS records).
 type Zone struct {
 	ID   string
-	Name string // e.g. "bionicaisolutions.com"
+	Name string // e.g. "example.com"
 }
 
 // DNSRecord is a single DNS record within a Cloudflare zone.
 type DNSRecord struct {
-	Name    string // fully-qualified host, e.g. "livekit.bionicaisolutions.com"
+	Name    string // fully-qualified host, e.g. "api.example.com"
 	Type    string // "A", "AAAA", "CNAME", etc.
 	Content string // IP address or CNAME target
 	Proxied bool   // true when Cloudflare proxy (orange cloud) is enabled
