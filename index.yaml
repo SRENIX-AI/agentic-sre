@@ -5,6 +5,33 @@ entries:
       category: Infrastructure
       licenses: Apache-2.0
     apiVersion: v2
+    appVersion: 1.12.4
+    created: "2026-06-01T22:26:23.896976492Z"
+    description: 'Self-healing operational layer for Kubernetes clusters: detect →
+      fix → re-verify → report, on a schedule, without dashboards or pagers. '
+    digest: 34d030b1b0eb9aa09845258f21a49a80ad314df58f0c1c5da99b58800552695e
+    home: https://github.com/Bionic-AI-Solutions/cluster-health-autopilot
+    keywords:
+    - kubernetes
+    - operations
+    - sre
+    - self-healing
+    - monitoring
+    kubeVersion: '>=1.27.0-0'
+    maintainers:
+    - email: cha-security@baisoln.com
+      name: salilkadam
+    name: cluster-health-autopilot
+    sources:
+    - https://github.com/Bionic-AI-Solutions/cluster-health-autopilot
+    type: application
+    urls:
+    - https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/cluster-health-autopilot-1.12.4/cluster-health-autopilot-1.12.4.tgz
+    version: 1.12.4
+  - annotations:
+      category: Infrastructure
+      licenses: Apache-2.0
+    apiVersion: v2
     appVersion: 1.12.3
     created: "2026-06-01T17:54:09.120803851Z"
     description: 'Self-healing operational layer for Kubernetes clusters: detect →
@@ -1135,4 +1162,4 @@ entries:
     urls:
     - https://github.com/Bionic-AI-Solutions/cluster-health-autopilot/releases/download/cluster-health-autopilot-0.8.0/cluster-health-autopilot-0.8.0.tgz
     version: 0.8.0
-generated: "2026-06-01T17:54:09.121186779Z"
+generated: "2026-06-01T22:26:23.897374235Z"
