@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/rag"
 )
 
 // EndpointTarget is a single URL to probe externally.
@@ -76,6 +77,22 @@ type Endpoints struct {
 	// before being recorded as a failure. Default true.
 	RetryOnFlake bool
 
+	// Learnt is the paid-tier cluster RAG reader. OSS gets rag.NoopReader
+	// (returns nothing) and the probe behaves exactly as it did pre-2d.
+	// The paid AI tier wires a Qdrant-backed reader so apex / Cloudflare-
+	// only domains learnt from prior cycles fan in alongside static
+	// Targets + auto-discovered Ingress hosts.
+	//
+	// Nil is treated as NoopReader — bare-literal Endpoints structs in
+	// existing call sites stay working without modification.
+	Learnt rag.Reader
+
+	// LearntImportanceMin is the minimum learned importance for a
+	// rag.KindApexDomain entry to be replayed as a probe target. Default
+	// 0.3 (include unless explicitly de-ranked). Tunable via the CR's
+	// spec.ai.rag.importance.endpointMin field.
+	LearntImportanceMin float64
+
 	// streaks tracks consecutive failures per target URL. Required to be
 	// non-nil for failure suppression to work — initialized by NewEndpoints
 	// or lazily by Run on first use. Pointer is shared across Probe-interface
@@ -135,9 +152,18 @@ func (e Endpoints) Run(ctx context.Context, src snapshot.Source) Result {
 		return r
 	}
 
-	// Merge static targets with any auto-discovered Ingress hosts.
+	// Merge static targets with auto-discovered Ingress hosts and any
+	// learnt apex/Cloudflare-only domains the paid AI tier has persisted.
+	// Precedence: static (operator-supplied) > learnt > Ingress-discovered,
+	// de-duplicated by hostname so the same host can't be probed twice.
 	allTargets := append([]EndpointTarget{}, e.Targets...)
-	discovered := DiscoverIngressTargets(ctx, src, e.Discovery, hostnamesOf(e.Targets))
+	knownHosts := hostnamesOf(allTargets)
+	learnt := learntApexTargets(ctx, e.Learnt, e.LearntImportanceMin, knownHosts)
+	allTargets = append(allTargets, learnt...)
+	for _, lt := range learnt {
+		knownHosts = append(knownHosts, hostOf(lt.URL))
+	}
+	discovered := DiscoverIngressTargets(ctx, src, e.Discovery, knownHosts)
 	allTargets = append(allTargets, discovered...)
 
 	if len(allTargets) == 0 {
