@@ -1,6 +1,6 @@
 # Cluster Health Autopilot — Run Summary
 
-_Auto-generated 2026-05-31 06:27 UTC · 27 run(s) · 2026-05-04 → 2026-05-30_
+_Auto-generated 2026-06-01 06:56 UTC · 28 run(s) · 2026-05-04 → 2026-05-31_
 
 ## Health trend
 
@@ -33,29 +33,31 @@ _Auto-generated 2026-05-31 06:27 UTC · 27 run(s) · 2026-05-04 → 2026-05-30_
 | 2026-05-28 | run-2026-05-28 | 16 | 14 | 1 | 0 | 5 | 286 |
 | 2026-05-29 | run-2026-05-29 | 16 | 14 | 1 | 0 | 6 | 288 |
 | 2026-05-30 | run-2026-05-30 | 16 | 14 | 1 | 0 | 5 | 291 |
+| 2026-05-31 | run-2026-05-31 | 19 | 16 | 1 | 0 | 17 | 242 |
 
 ## Diagnostic patterns (top categories, anonymized)
 
 | Category | Occurrences |
 |---|---|
-| `Pod` | 592 |
-| `Namespace` | 387 |
-| `ClusterRole` | 108 |
-| `ServiceAccount` | 36 |
-| `HorizontalPodAutoscaler` | 21 |
+| `Pod` | 733 |
+| `Namespace` | 428 |
+| `ClusterRole` | 127 |
+| `ServiceAccount` | 37 |
+| `DNSChainDrift` | 33 |
+| `HorizontalPodAutoscaler` | 27 |
 | `missing-secret` | 14 |
 | `unprovisioned` | 14 |
 | `cert-expiry` | 9 |
 | `ExternalSecret` | 7 |
-| `missing-key` | 7 |
 
 ## Component findings (top, anonymized)
 
 | Severity/Component | Occurrences |
 |---|---|
-| `warning/component-a733dc9e` | 10 |
-| `warning/component-68fc25e4` | 9 |
-| `warning/component-09858a0e` | 5 |
+| `warning/component-a733dc9e` | 22 |
+| `warning/component-68fc25e4` | 12 |
+| `warning/component-09858a0e` | 6 |
+| `info/component-80741754` | 1 |
 | `warning/Critical Services` | 1 |
 
 ## Day-by-day details
@@ -1860,6 +1862,304 @@ _Auto-generated 2026-05-31 06:27 UTC · 27 run(s) · 2026-05-04 → 2026-05-30_
 
 </details>
 
+<details>
+<summary><strong>2026-05-31</strong> — 19 component(s) · 242 diagnostic(s)</summary>
+
+### Probes
+
+| Component | Status | Detail |
+|---|---|---|
+| Ceph Storage | HEALTHY | 1 cluster(s): rook-ceph@rook-ceph OK (12.2% used) |
+| Cluster Nodes | HEALTHY | All 6 nodes ready |
+| PostgreSQL | HEALTHY | 1 CNPG cluster(s): pg-ceph@pg (2/2 ready, primary=pg-ceph-5) |
+| Storage Claims | HEALTHY | All 79 PVCs bound |
+| Critical Services | HEALTHY | All 0 critical services operational |
+| component-a733dc9e | HEALTHY | All 19 endpoints reachable (31 auto-discovered, 12 transient under threshold) |
+| component-6f130a4d | HEALTHY | All 6 nodes pressure-clear |
+| component-35605956 | HEALTHY | All 5 system DaemonSets fully scheduled |
+| component-e7e62774 | HEALTHY | No pods Pending past grace period |
+| component-244066f0 | HEALTHY | No CrashLoopBackOff pods detected |
+| component-09858a0e | WARNING | No in-cluster etcd pods found in kube-system (external etcd or non-kubeadm install) |
+| component-514d9b4b | HEALTHY | No pods stuck on volume mount |
+| component-aee58c5b | HEALTHY | 81 KongPlugin resource(s) inspected |
+| component-68fc25e4 | DEGRADED | 9 HPA(s) inspected |
+| component-2e83246f | HEALTHY | no Argo CD Applications |
+| component-f929c3bb | HEALTHY | no Velero Backup resources |
+| component-0cd84b69 | SKIPPED | Traefik CRDs not installed |
+| component-b46467bf | HEALTHY | no local-path PVCs found |
+| component-80741754 | HEALTHY | k3s SQLite datastore (single-node); no etcd pods expected |
+
+### Findings
+
+| Component | Severity | Message |
+|---|---|---|
+| component-593c6663 | warning | [transient, 1/2] https://host-647db09d: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-7e9626dc | warning | [transient, 1/2] https://host-f1ba8d59: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-19e34bfb | warning | [transient, 1/2] https://host-3b05cb67: connection failed — dial tcp img-5ab4227a:tag: connect: connection refused |
+| component-1645c7ed | warning | [transient, 1/2] https://host-e5673458: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-709c9a19 | warning | [transient, 1/2] https://host-32225d86: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-059f1171 | warning | [transient, 1/2] https://host-81ab186c: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-8b7952c7 | warning | [transient, 1/2] https://host-d63bb08e: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-5dc4fc30 | warning | [transient, 1/2] https://host-0ccdb59e: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-66c36fdf | warning | [transient, 1/2] https://host-29bd8929: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-85beb2bc | warning | [transient, 1/2] https://host-2249606b: connection failed — dial tcp img-5ab4227a:tag: connect: connection refused |
+| component-894c9bb3 | warning | [transient, 1/2] https://host-d947e194: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-9082efc5 | warning | [transient, 1/2] https://host-bda455e8: connection failed — dial tcp img-41b8351d:tag: connect: connection refused |
+| component-09858a0e | warning | ETCD probe is blind: no in-cluster etcd pods captured. Cluster may be using external etcd. |
+| component-3e7d4aa2 | warning | HPA comfyui/keda-hpa-comfyui autoscaling inactive (reason=ScalingDisabled) — expected when the target is scaled to zero / KEDA scale-to-zero; not an outage |
+| component-7d31b4b6 | warning | HPA mcp-gateway/mcp-context-forge-hpa autoscaling inactive (reason=ScalingDisabled) — expected when the target is scaled to zero / KEDA scale-to-zero; not an outage |
+| component-2167a950 | warning | HPA vc-tools/agentchat autoscaling inactive (reason=ScalingDisabled) — expected when the target is scaled to zero / KEDA scale-to-zero; not an outage |
+| component-80741754 | info | k3s cluster appears to use SQLite (single-node, no etcd static pods found); no HA for the datastore |
+
+### Diagnostics
+
+| # | Category | Message |
+|---|---|---|
+| 1 | `ClusterRole` | ClusterRole admin grants wildcard verb (verbs=[*], apiGroups=[host-2c241f60], resources=[packagemanifests]) |
+| 2 | `ClusterRole` | ClusterRole cluster-owner grants wildcard verb (verbs=[*], apiGroups=[*], resources=[*]) |
+| 3 | `ClusterRole` | ClusterRole console-sa-role grants wildcard verb (verbs=[*], apiGroups=[host-58bafcdc], resources=[*]) |
+| 4 | `ClusterRole` | ClusterRole k10-admin grants wildcard verb (verbs=[*], apiGroups=[host-2356746d host-4d6ecd8b host-a997d3ec host-9bd66834 host-ccf5341b host-fb02e51e host-4b45a737 host-95e197c2], resources=[*]) |
+| 5 | `ClusterRole` | ClusterRole k10-basic grants wildcard verb (verbs=[*], apiGroups=[host-2356746d], resources=[backupactions backupactions/details restoreactions restoreactions/details validateactions validateactions/details exportactions exportactions/details cancelactions runactions runactions/details]) |
+| 6 | `ClusterRole` | ClusterRole k10-mc-admin grants wildcard verb (verbs=[*], apiGroups=[host-09e3f2f1 host-a997d3ec host-ca40aad1], resources=[*]) |
+| 7 | `ClusterRole` | ClusterRole k3s-cloud-controller-manager grants wildcard verb (verbs=[*], apiGroups=[], resources=[nodes]) |
+| 8 | `ClusterRole` | ClusterRole kasten-admin grants wildcard verb (verbs=[*], apiGroups=[host-2356746d host-4d6ecd8b host-09e3f2f1 host-a997d3ec host-dfd97b10 host-9bd66834 host-ca40aad1 host-ccf5341b host-fc5e354a host-fb02e51e host-4b45a737 host-95e197c2], resources=[*]) |
+| 9 | `ClusterRole` | ClusterRole kasten-aggregatedapis-svc grants wildcard verb (verbs=[*], apiGroups=[], resources=[secrets]) |
+| 10 | `ClusterRole` | ClusterRole local-clusterowner grants wildcard verb (verbs=[*], apiGroups=[host-fd783739], resources=[clusters]) |
+| 11 | `ClusterRole` | ClusterRole local-path-provisioner-role grants wildcard verb (verbs=[*], apiGroups=[], resources=[endpoints persistentvolumes pods]) |
+| 12 | `ClusterRole` | ClusterRole minio-operator grants wildcard verb (verbs=[*], apiGroups=[], resources=[*]) |
+| 13 | `ClusterRole` | ClusterRole minio-operator-role grants wildcard verb (verbs=[*], apiGroups=[host-58bafcdc host-021e4405], resources=[*]) |
+| 14 | `ClusterRole` | ClusterRole olm.og.global-operators.admin-5UD4U2IfBGbw51Qy2Jaefk1uawvkj2OJILlc3w grants wildcard verb (verbs=[*], apiGroups=[redis.redis.opstreelabs.in], resources=[redisreplications]) |
+| 15 | `ClusterRole` | ClusterRole olm.og.olm-operators.admin-4ZLCGAP5QcGCG77n5nsv27O9w2VWNfAzuGGQ43 grants wildcard verb (verbs=[*], apiGroups=[host-2c241f60], resources=[packagemanifests]) |
+| 16 | `ClusterRole` | ClusterRole p-k4z5l-namespaces-edit grants wildcard verb (verbs=[*], apiGroups=[], resources=[namespaces]) |
+| 17 | `ClusterRole` | ClusterRole p-nkvmw-namespaces-edit grants wildcard verb (verbs=[*], apiGroups=[], resources=[namespaces]) |
+| 18 | `ClusterRole` | ClusterRole packagemanifests-v1-admin grants wildcard verb (verbs=[*], apiGroups=[host-2c241f60], resources=[packagemanifests]) |
+| 19 | `ClusterRole` | ClusterRole prometheus-operator grants wildcard verb (verbs=[*], apiGroups=[host-3168fa50], resources=[alertmanagers alertmanagers/finalizers alertmanagers/status alertmanagerconfigs prometheuses prometheuses/finalizers prometheuses/status prometheusagents prometheusagents/finalizers prometheusagents/status thanosrulers thanosrulers/finalizers thanosrulers/status scrapeconfigs servicemonitors podmonitors probes prometheusrules]) |
+| 20 | `Role` | Role kasten-admin grants wildcard verb (verbs=[*], apiGroups=[*], resources=[*]) |
+| 21 | `ServiceAccount` | ServiceAccount external-secrets/external-secrets-webhook is mounted by a Pod but has no RoleBinding or ClusterRoleBinding |
+| 22 | `HorizontalPodAutoscaler` | HPA letta/letta-server pinned at minReplicas=3 for >720h0m0s with maxReplicas=10 unused; HPA is not load-driven (effectively decorative) |
+| 23 | `HorizontalPodAutoscaler` | HPA livekit/livekit-dashboard-hpa pinned at minReplicas=2 for >720h0m0s with maxReplicas=5 unused; HPA is not load-driven (effectively decorative) |
+| 24 | `HorizontalPodAutoscaler` | HPA mcp-gateway/mcp-context-forge-hpa pinned at minReplicas=2 for >720h0m0s with maxReplicas=10 unused; HPA is not load-driven (effectively decorative) |
+| 25 | `HorizontalPodAutoscaler` | HPA pg/haproxy-hpa pinned at minReplicas=2 for >720h0m0s with maxReplicas=4 unused; HPA is not load-driven (effectively decorative) |
+| 26 | `HorizontalPodAutoscaler` | HPA vc-tools/agentchat pinned at minReplicas=1 for >720h0m0s with maxReplicas=5 unused; HPA is not load-driven (effectively decorative) |
+| 27 | `HorizontalPodAutoscaler` | HPA vc-tools/vc-tools pinned at minReplicas=2 for >720h0m0s with maxReplicas=10 unused; HPA is not load-driven (effectively decorative) |
+| 28 | `Namespace` | Namespace agents has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 29 | `Namespace` | Namespace auth-proxy has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 30 | `Namespace` | Namespace bionic-platform has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 31 | `Namespace` | Namespace cert-manager has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 32 | `Namespace` | Namespace cha-website has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 33 | `Namespace` | Namespace cluster-health-autopilot has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 34 | `Namespace` | Namespace code has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 35 | `Namespace` | Namespace default has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 36 | `Namespace` | Namespace etcd has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 37 | `Namespace` | Namespace guruji has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 38 | `Namespace` | Namespace kb-system has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 39 | `Namespace` | Namespace keda has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 40 | `Namespace` | Namespace keycloak has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 41 | `Namespace` | Namespace kong has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 42 | `Namespace` | Namespace kube-flannel explicitly enforces PSS=privileged — the most-permissive profile |
+| 43 | `Namespace` | Namespace letta has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 44 | `Namespace` | Namespace livekit has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 45 | `Namespace` | Namespace livekit-agents has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 46 | `Namespace` | Namespace local-path-storage has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 47 | `Namespace` | Namespace mail has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 48 | `Namespace` | Namespace mcp has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 49 | `Namespace` | Namespace mcp-gateway has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 50 | `Namespace` | Namespace meilisearch has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 51 | `Namespace` | Namespace metallb-system explicitly enforces PSS=privileged — the most-permissive profile |
+| 52 | `Namespace` | Namespace minio has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 53 | `Namespace` | Namespace minio-operator has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 54 | `Namespace` | Namespace miroshark has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 55 | `Namespace` | Namespace nextcloud has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 56 | `Namespace` | Namespace nfs-provisioner has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 57 | `Namespace` | Namespace pg has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 58 | `Namespace` | Namespace radar has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 59 | `Namespace` | Namespace redis has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 60 | `Namespace` | Namespace repomind has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 61 | `Namespace` | Namespace search-infrastructure has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 62 | `Namespace` | Namespace socialx has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 63 | `Namespace` | Namespace storethesoup has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 64 | `Namespace` | Namespace tutor has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 65 | `Namespace` | Namespace vc-livekit has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 66 | `Namespace` | Namespace vc-tools has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 67 | `Namespace` | Namespace wabuilder has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 68 | `Namespace` | Namespace web has no host-42bc1117/enforce label; admission applies the cluster-wide default (typically privileged) |
+| 69 | `Pod` | Pod agents/token-server-7f6d869fc6-5vkr6 mounts 1 container image(s) without digest pin: token-server=node:18-alpine |
+| 70 | `Pod` | Pod auth-proxy/oauth2-proxy-bionic-platform-8695d8997d-thjl6 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 71 | `Pod` | Pod auth-proxy/oauth2-proxy-comfyui-79b9d59f45-r6zhw mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 72 | `Pod` | Pod auth-proxy/oauth2-proxy-dify-84b57d6465-9g5h7 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 73 | `Pod` | Pod auth-proxy/oauth2-proxy-livekit-dashboard-75b6b6b9b5-6hnfp mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 74 | `Pod` | Pod auth-proxy/oauth2-proxy-miroshark-ccc778977-2rnxs mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 75 | `Pod` | Pod auth-proxy/oauth2-proxy-repomind-999dbf868-4pmbv mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 76 | `Pod` | Pod auth-proxy/oauth2-proxy-socialx-cff59b44d-dvn9z mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 77 | `Pod` | Pod auth-proxy/oauth2-proxy-tutor-confidential-78f6964c69-qpt45 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 78 | `Pod` | Pod auth-proxy/oauth2-proxy-vc-livekit-74fcbd997b-mgd65 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 79 | `Pod` | Pod auth-proxy/oauth2-proxy-vc-tools-5cb988b975-8f4v5 mounts 1 container image(s) without digest pin: oauth2-proxy=img-cb3f717e:tag |
+| 80 | `Pod` | Pod bionic-platform/dify-api-5db8c684d-gq5jj mounts 1 container image(s) without digest pin: dify-api=img-ecb36086:tag |
+| 81 | `Pod` | Pod bionic-platform/dify-plugin-daemon-865d5b74dd-x45vd mounts 1 container image(s) without digest pin: plugin-daemon=img-e2e051d8:tag |
+| 82 | `Pod` | Pod bionic-platform/dify-sandbox-854d555b75-4r29f mounts 1 container image(s) without digest pin: dify-sandbox=img-dd019946:tag |
+| 83 | `Pod` | Pod bionic-platform/dify-web-ccf9b7f48-flh7d mounts 1 container image(s) without digest pin: dify-web=img-9852494f:tag |
+| 84 | `Pod` | Pod bionic-platform/dify-worker-5c467cd47b-77lhj mounts 1 container image(s) without digest pin: dify-worker=img-ecb36086:tag |
+| 85 | `Pod` | Pod cert-manager/cert-manager-858fbcc458-g7v97 mounts 1 container image(s) without digest pin: cert-manager-controller=img-f8ff9f0e:tag |
+| 86 | `Pod` | Pod cert-manager/cert-manager-cainjector-67644489c4-lc75p mounts 1 container image(s) without digest pin: cert-manager-cainjector=img-d72005ed:tag |
+| 87 | `Pod` | Pod cert-manager/cert-manager-webhook-6687664ccb-vpdkj mounts 1 container image(s) without digest pin: cert-manager-webhook=img-f54054e7:tag |
+| 88 | `Pod` | Pod cha-website/cha-website-6bb75cf879-mc5xg mounts 1 container image(s) without digest pin: cha-website=img-22dab534:tag |
+| 89 | `Pod` | Pod cluster-health-autopilot/bionic-aiwatch-b9db864c7-6qzsq mounts 1 container image(s) without digest pin: aiwatch=img-8cd780f7:tag |
+| 90 | `Pod` | Pod cluster-health-autopilot/bionic-approval-server-c5485557f-6plfd mounts 1 container image(s) without digest pin: approval-server=img-8cd780f7:tag |
+| 91 | `Pod` | Pod cluster-health-autopilot/bionic-approval-server-c5485557f-tqdlj mounts 1 container image(s) without digest pin: approval-server=img-8cd780f7:tag |
+| 92 | `Pod` | Pod cluster-health-autopilot/bionic-rag-0 mounts 1 container image(s) without digest pin: qdrant=img-6d810a04:tag |
+| 93 | `Pod` | Pod cluster-health-autopilot/bionic-watcher-5bd4c4d6f7-g4ktb mounts 1 container image(s) without digest pin: watcher=img-94908202:tag |
+| 94 | `Pod` | Pod cluster-health-autopilot/cha-cluster-health-autopilot-operator-6c9f7887bd-wvj4l mounts 1 container image(s) without digest pin: operator=img-94908202:tag |
+| 95 | `Pod` | Pod cluster-health-autopilot/cha-cluster-health-autopilot-runner-9b8769976-5nc5b mounts 1 container image(s) without digest pin: runner=img-1d1d87c3:tag |
+| 96 | `Pod` | Pod code/devcontainer-58758d55c6-s879x mounts 2 container image(s) without digest pin: dev=ubuntu:24.04, dind=img-d548c5b8:tag |
+| 97 | `Pod` | Pod default/prometheus-operator-54866c5c7-qtwv8 mounts 1 container image(s) without digest pin: prometheus-operator=img-e4c18ee9:tag |
+| 98 | `Pod` | Pod etcd/etcd-ceph-0 mounts 1 container image(s) without digest pin: etcd=img-aaa6a3c2:tag |
+| 99 | `Pod` | Pod etcd/etcd-ceph-1 mounts 1 container image(s) without digest pin: etcd=img-aaa6a3c2:tag |
+| 100 | `Pod` | Pod etcd/etcd-ceph-2 mounts 1 container image(s) without digest pin: etcd=img-aaa6a3c2:tag |
+| 101 | `Pod` | Pod gharkaam/gharkaam-redis-7984bf78cb-9m8vt mounts 1 container image(s) without digest pin: redis=redis:7-alpine |
+| 102 | `Pod` | Pod gharkaam/gharkaam-web-777dddd5b5-jvjqs mounts 1 container image(s) without digest pin: gharkaam=img-ce00959c:tag |
+| 103 | `Pod` | Pod gharkaam/gharkaam-web-777dddd5b5-zrsm7 mounts 1 container image(s) without digest pin: gharkaam=img-ce00959c:tag |
+| 104 | `Pod` | Pod kasten-io/aggregatedapis-svc-86558f785-dd47n mounts 1 container image(s) without digest pin: aggregatedapis-svc=img-b6bdc186:tag |
+| 105 | `Pod` | Pod kasten-io/auth-svc-65b496c468-2l65q mounts 1 container image(s) without digest pin: auth-svc=img-fbbb51f0:tag |
+| 106 | `Pod` | Pod kasten-io/catalog-svc-7d85c8d4b6-rwvzx mounts 2 container image(s) without digest pin: catalog-svc=img-a0a74c93:tag, kanister-sidecar=img-973cc84e:tag |
+| 107 | `Pod` | Pod kasten-io/controllermanager-svc-7f67bbc55c-bhnxj mounts 1 container image(s) without digest pin: controllermanager-svc=img-24b333e4:tag |
+| 108 | `Pod` | Pod kasten-io/crypto-svc-698f54fd98-wv7gd mounts 4 container image(s) without digest pin: crypto-svc=img-6fe0d4e6:tag, bloblifecyclemanager-svc=img-579f75ce:tag, garbagecollector-svc=img-43933de6:tag, repositories-svc=img-645ceb9a:tag |
+| 109 | `Pod` | Pod kasten-io/dashboardbff-svc-7bc499679-kkq6h mounts 2 container image(s) without digest pin: dashboardbff-svc=img-add94ad0:tag, vbrintegrationapi-svc=img-1c7aa493:tag |
+| 110 | `Pod` | Pod kasten-io/executor-svc-678b877f86-c9brc mounts 1 container image(s) without digest pin: executor-svc=img-3166c66d:tag |
+| 111 | `Pod` | Pod kasten-io/executor-svc-678b877f86-pvhqp mounts 1 container image(s) without digest pin: executor-svc=img-3166c66d:tag |
+| 112 | `Pod` | Pod kasten-io/executor-svc-678b877f86-vgkkm mounts 1 container image(s) without digest pin: executor-svc=img-3166c66d:tag |
+| 113 | `Pod` | Pod kasten-io/frontend-svc-685ff944b-r696k mounts 1 container image(s) without digest pin: frontend-svc=img-52c47c9e:tag |
+| 114 | `Pod` | Pod kasten-io/gateway-75bd44fd8d-sg99g mounts 1 container image(s) without digest pin: gateway=img-100058ed:tag |
+| 115 | `Pod` | Pod kasten-io/jobs-svc-5cbcc5598d-dj246 mounts 1 container image(s) without digest pin: jobs-svc=img-11f3880a:tag |
+| 116 | `Pod` | Pod kasten-io/kanister-svc-79ffb6bc95-hppk2 mounts 1 container image(s) without digest pin: kanister-svc=img-773f8d1c:tag |
+| 117 | `Pod` | Pod kasten-io/logging-svc-79c7b479dc-chs5r mounts 1 container image(s) without digest pin: logging-svc=img-96ac81d4:tag |
+| 118 | `Pod` | Pod kasten-io/metering-svc-7b8c678f77-gxzpj mounts 1 container image(s) without digest pin: metering-svc=img-6d1c011b:tag |
+| 119 | `Pod` | Pod kasten-io/prometheus-server-569cd85c55-zsdls mounts 2 container image(s) without digest pin: prometheus-server-configmap-reload=img-0bbcb73e:tag, prometheus-server=img-134afd0b:tag |
+| 120 | `Pod` | Pod kasten-io/state-svc-9ddfcd765-jf2km mounts 2 container image(s) without digest pin: state-svc=img-eed87270:tag, events-svc=img-e78d28f8:tag |
+| 121 | `Pod` | Pod kb-system/snapshot-controller-59d94b5486-nwqbq mounts 1 container image(s) without digest pin: snapshot-controller=img-e250bd1d:tag |
+| 122 | `Pod` | Pod keda/keda-add-ons-http-controller-manager-85b67466-fb85r mounts 1 container image(s) without digest pin: keda-add-ons-http-operator=img-e7ebf4bd:tag |
+| 123 | `Pod` | Pod keda/keda-add-ons-http-external-scaler-67c8b74657-f96xd mounts 1 container image(s) without digest pin: keda-add-ons-http-external-scaler=img-d1d8f140:tag |
+| 124 | `Pod` | Pod keda/keda-add-ons-http-external-scaler-67c8b74657-h57w8 mounts 1 container image(s) without digest pin: keda-add-ons-http-external-scaler=img-d1d8f140:tag |
+| 125 | `Pod` | Pod keda/keda-add-ons-http-external-scaler-67c8b74657-wzqvm mounts 1 container image(s) without digest pin: keda-add-ons-http-external-scaler=img-d1d8f140:tag |
+| 126 | `Pod` | Pod keda/keda-add-ons-http-interceptor-64d648cd97-kzbwz mounts 1 container image(s) without digest pin: keda-add-ons-http-interceptor=img-356ff8dd:tag |
+| 127 | `Pod` | Pod keda/keda-admission-webhooks-5d67c9bcfb-qs2rq mounts 1 container image(s) without digest pin: keda-admission-webhooks=img-ea9f30f1:tag |
+| 128 | `Pod` | Pod keda/keda-operator-85ff5bb446-87f8g mounts 1 container image(s) without digest pin: keda-operator=img-4c7ff1a2:tag |
+| 129 | `Pod` | Pod keda/keda-operator-metrics-apiserver-7ff5758fd7-rv8cd mounts 1 container image(s) without digest pin: keda-operator-metrics-apiserver=img-f2a96f66:tag |
+| 130 | `Pod` | Pod keycloak/keycloak-0 mounts 1 container image(s) without digest pin: keycloak=img-a351cffb:tag |
+| 131 | `Pod` | Pod kong/kong-kong-6d4b57d8bb-84zp6 mounts 2 container image(s) without digest pin: ingress-controller=img-b7101a2b:tag, proxy=img-28877ae8:tag |
+| 132 | `Pod` | Pod kube-flannel/kube-flannel-ds-9ldj8 mounts 1 container image(s) without digest pin: kube-flannel=img-808fdb6a:tag |
+| 133 | `Pod` | Pod kube-flannel/kube-flannel-ds-b5c7n mounts 1 container image(s) without digest pin: kube-flannel=img-808fdb6a:tag |
+| 134 | `Pod` | Pod kube-flannel/kube-flannel-ds-bb2p4 mounts 1 container image(s) without digest pin: kube-flannel=img-808fdb6a:tag |
+| 135 | `Pod` | Pod kube-flannel/kube-flannel-ds-cfdk2 mounts 1 container image(s) without digest pin: kube-flannel=img-808fdb6a:tag |
+| 136 | `Pod` | Pod kube-flannel/kube-flannel-ds-xzv56 mounts 1 container image(s) without digest pin: kube-flannel=img-808fdb6a:tag |
+| 137 | `Pod` | Pod kube-flannel/kube-flannel-ds-z8vxr mounts 1 container image(s) without digest pin: kube-flannel=img-808fdb6a:tag |
+| 138 | `Pod` | Pod langfuse/langfuse-clickhouse-shard0-0 mounts 1 container image(s) without digest pin: clickhouse=img-f72637ad:tag |
+| 139 | `Pod` | Pod langfuse/langfuse-clickhouse-shard0-1 mounts 1 container image(s) without digest pin: clickhouse=img-f72637ad:tag |
+| 140 | `Pod` | Pod langfuse/langfuse-clickhouse-shard0-2 mounts 1 container image(s) without digest pin: clickhouse=img-f72637ad:tag |
+| 141 | `Pod` | Pod langfuse/langfuse-s3-699b5ddc85-kt5h9 mounts 1 container image(s) without digest pin: minio=img-14773e69:tag |
+| 142 | `Pod` | Pod langfuse/langfuse-zookeeper-0 mounts 1 container image(s) without digest pin: zookeeper=img-eab8cce1:tag |
+| 143 | `Pod` | Pod langfuse/langfuse-zookeeper-1 mounts 1 container image(s) without digest pin: zookeeper=img-eab8cce1:tag |
+| 144 | `Pod` | Pod langfuse/langfuse-zookeeper-2 mounts 1 container image(s) without digest pin: zookeeper=img-eab8cce1:tag |
+| 145 | `Pod` | Pod letta/letta-server-85d4f7b9c6-9g6jd mounts 1 container image(s) without digest pin: letta-server=img-d234e890:tag |
+| 146 | `Pod` | Pod letta/letta-server-85d4f7b9c6-dh7zb mounts 1 container image(s) without digest pin: letta-server=img-d234e890:tag |
+| 147 | `Pod` | Pod letta/letta-server-85d4f7b9c6-twf4k mounts 1 container image(s) without digest pin: letta-server=img-d234e890:tag |
+| 148 | `Pod` | Pod livekit-agents/flash-agent-7bf6d47694-nmznh mounts 1 container image(s) without digest pin: agent=img-f658050f:tag |
+| 149 | `Pod` | Pod livekit/livekit-egress-648bd8f6d8-2s266 mounts 1 container image(s) without digest pin: livekit-egress=img-48369a33:tag |
+| 150 | `Pod` | Pod livekit/livekit-egress-648bd8f6d8-xwlgw mounts 1 container image(s) without digest pin: livekit-egress=img-48369a33:tag |
+| 151 | `Pod` | Pod livekit/livekit-server-64c47fff6c-z7j26 mounts 1 container image(s) without digest pin: livekit-server=img-c20d64f7:tag |
+| 152 | `Pod` | Pod livekit/livekit-sip-server-856f5c69d6-95bzc mounts 1 container image(s) without digest pin: livekit-sip-server=img-4e2f040a:tag |
+| 153 | `Pod` | Pod livekit/livekit-token-server-64468cc96b-dnsft mounts 1 container image(s) without digest pin: token-server=img-f2eb9a07:tag |
+| 154 | `Pod` | Pod local-path-storage/local-path-provisioner-57794bf4cd-f78nx mounts 1 container image(s) without digest pin: local-path-provisioner=img-48a86045:tag |
+| 155 | `Pod` | Pod mail/mail-service-7776dd9584-knhlr mounts 1 container image(s) without digest pin: mail-service=img-7c154a40:tag |
+| 156 | `Pod` | Pod mail/mail-service-7776dd9584-n4jrf mounts 1 container image(s) without digest pin: mail-service=img-7c154a40:tag |
+| 157 | `Pod` | Pod mcp/redis-7564b66579-t2ccm mounts 1 container image(s) without digest pin: redis=redis:7-alpine |
+| 158 | `Pod` | Pod meilisearch/meilisearch-0 mounts 1 container image(s) without digest pin: meilisearch=img-b196c46d:tag |
+| 159 | `Pod` | Pod metallb-system/controller-5ccfff46f4-v8qhh mounts 1 container image(s) without digest pin: controller=img-71b010f2:tag |
+| 160 | `Pod` | Pod metallb-system/speaker-54mx4 mounts 1 container image(s) without digest pin: speaker=img-5ed2c981:tag |
+| 161 | `Pod` | Pod metallb-system/speaker-5pmhl mounts 1 container image(s) without digest pin: speaker=img-5ed2c981:tag |
+| 162 | `Pod` | Pod metallb-system/speaker-r8b5z mounts 1 container image(s) without digest pin: speaker=img-5ed2c981:tag |
+| 163 | `Pod` | Pod metallb-system/speaker-vggvs mounts 1 container image(s) without digest pin: speaker=img-5ed2c981:tag |
+| 164 | `Pod` | Pod metallb-system/speaker-z5lt6 mounts 1 container image(s) without digest pin: speaker=img-5ed2c981:tag |
+| 165 | `Pod` | Pod metallb-system/speaker-z5n4b mounts 1 container image(s) without digest pin: speaker=img-5ed2c981:tag |
+| 166 | `Pod` | Pod minio-operator/console-558dc87767-wv86t mounts 1 container image(s) without digest pin: console=img-8285f064:tag |
+| 167 | `Pod` | Pod minio-operator/minio-operator-85bc587c54-5sqzs mounts 1 container image(s) without digest pin: minio-operator=img-8285f064:tag |
+| 168 | `Pod` | Pod minio-operator/minio-operator-85bc587c54-tk2x9 mounts 1 container image(s) without digest pin: minio-operator=img-8285f064:tag |
+| 169 | `Pod` | Pod minio/minio-tenant-pool-0-0 mounts 2 container image(s) without digest pin: minio=img-c811a0c7:tag, sidecar=img-8285f064:tag |
+| 170 | `Pod` | Pod minio/minio-tenant-pool-0-1 mounts 2 container image(s) without digest pin: minio=img-c811a0c7:tag, sidecar=img-8285f064:tag |
+| 171 | `Pod` | Pod minio/minio-tenant-pool-0-2 mounts 2 container image(s) without digest pin: minio=img-c811a0c7:tag, sidecar=img-8285f064:tag |
+| 172 | `Pod` | Pod neo4j/neo4j-5d5c8669f6-s227d mounts 1 container image(s) without digest pin: neo4j=img-13fd9e77:tag |
+| 173 | `Pod` | Pod nextcloud/nextcloud-78545bf8f8-snndw mounts 2 container image(s) without digest pin: nextcloud=img-a75a0c2a:tag, nextcloud-cron=img-a75a0c2a:tag |
+| 174 | `Pod` | Pod nfs-provisioner/nfs-client-provisioner-667b7699fb-tv22t mounts 1 container image(s) without digest pin: nfs-client-provisioner=img-a483476c:tag |
+| 175 | `Pod` | Pod openproject/openproject-memcached-6ff56bf694-rx4tl mounts 1 container image(s) without digest pin: memcached=img-6e51047e:tag |
+| 176 | `Pod` | Pod openproject/openproject-web-dd6ddf7c7-mzvf4 mounts 1 container image(s) without digest pin: openproject=img-328d2632:tag |
+| 177 | `Pod` | Pod openproject/openproject-worker-default-785bb4d78d-bnlv8 mounts 1 container image(s) without digest pin: openproject=img-328d2632:tag |
+| 178 | `Pod` | Pod pg/alertmanager-postgresql-alertmanager-0 mounts 2 container image(s) without digest pin: alertmanager=img-238e2809:tag, config-reloader=img-09aee518:tag |
+| 179 | `Pod` | Pod pg/haproxy-78c65848c-24lvz mounts 1 container image(s) without digest pin: haproxy=img-cb2a3980:tag |
+| 180 | `Pod` | Pod pg/haproxy-78c65848c-kbjm7 mounts 1 container image(s) without digest pin: haproxy=img-cb2a3980:tag |
+| 181 | `Pod` | Pod pg/pg-ceph-5 mounts 1 container image(s) without digest pin: postgres=img-2fdbd549:tag |
+| 182 | `Pod` | Pod pg/pg-ceph-7 mounts 1 container image(s) without digest pin: postgres=img-2fdbd549:tag |
+| 183 | `Pod` | Pod pg/postgres-minio-backup-29668500-kkts5 mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 184 | `Pod` | Pod pg/postgres-minio-backup-29669940-87hks mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 185 | `Pod` | Pod pg/postgres-minio-backup-29671380-4gftn mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 186 | `Pod` | Pod pg/postgres-nfs-backup-29668440-xg6t8 mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 187 | `Pod` | Pod pg/postgres-nfs-backup-29669880-kh794 mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 188 | `Pod` | Pod pg/postgres-nfs-backup-29671320-gqkzc mounts 1 container image(s) without digest pin: postgres-backup=postgres:17 |
+| 189 | `Pod` | Pod radar/radar-b8dcfd5df-bpbw7 mounts 1 container image(s) without digest pin: radar=img-7c18e752:tag |
+| 190 | `Pod` | Pod redis/redis-cluster-ceph-0 mounts 1 container image(s) without digest pin: redis=redis:7.2-alpine |
+| 191 | `Pod` | Pod redis/redis-cluster-ceph-1 mounts 1 container image(s) without digest pin: redis=redis:7.2-alpine |
+| 192 | `Pod` | Pod redis/redis-cluster-ceph-2 mounts 1 container image(s) without digest pin: redis=redis:7.2-alpine |
+| 193 | `Pod` | Pod redis/redis-livekit-54c4997bfb-xtvd8 mounts 1 container image(s) without digest pin: redis=redis:7-alpine |
+| 194 | `Pod` | Pod redis/redis-proxy-56c5884f7-4gkd5 mounts 1 container image(s) without digest pin: envoy=img-b8f88d7b:tag |
+| 195 | `Pod` | Pod redis/redis-proxy-56c5884f7-vxs9s mounts 1 container image(s) without digest pin: envoy=img-b8f88d7b:tag |
+| 196 | `Pod` | Pod storethesoup/mariadb-0 mounts 1 container image(s) without digest pin: mariadb=img-e08f4c9c:tag |
+| 197 | `Pod` | Pod storethesoup/redis-6b45d66dc6-c65d2 mounts 1 container image(s) without digest pin: redis=redis:7-alpine |
+| 198 | `Pod` | Pod storethesoup/wordpress-f87f66675-lbdnj mounts 1 container image(s) without digest pin: wordpress=img-e9c0ca1e:tag |
+| 199 | `Pod` | Pod storethesoup/wp-loader mounts 1 container image(s) without digest pin: loader=alpine:3.20 |
+| 200 | `Pod` | Pod tutor/player-ui-6c677f9fd6-5d4jx mounts 1 container image(s) without digest pin: player-ui=img-3cff2a31:tag |
+| 201 | `Pod` | Pod vc-livekit/backend-68864cd948-5nph8 mounts 1 container image(s) without digest pin: backend=img-56bc67bf:tag |
+| 202 | `Pod` | Pod vc-livekit/backend-68864cd948-xnlvx mounts 1 container image(s) without digest pin: backend=img-56bc67bf:tag |
+| 203 | `Pod` | Pod vc-livekit/frontend-7575ccfd65-b5kzv mounts 1 container image(s) without digest pin: frontend=img-5e9d5a78:tag |
+| 204 | `Pod` | Pod vc-livekit/frontend-7575ccfd65-p4d9v mounts 1 container image(s) without digest pin: frontend=img-5e9d5a78:tag |
+| 205 | `Pod` | Pod vc-livekit/livekit-agent-764fcd7449-hsv72 mounts 1 container image(s) without digest pin: livekit-agent=img-93275bff:tag |
+| 206 | `Pod` | Pod vc-livekit/registry-846d97b78b-pkp8j mounts 1 container image(s) without digest pin: registry=img-872491a3:tag |
+| 207 | `Pod` | Pod web/baisoln-web-5bc8b766cb-2gmpm mounts 1 container image(s) without digest pin: web=img-fde54743:tag |
+| 208 | `Pod` | Pod web/baisoln-web-5bc8b766cb-fr47v mounts 1 container image(s) without digest pin: web=img-fde54743:tag |
+| 209 | `Pod` | Pod web/contact-api-7ccbb4cfd4-knznv mounts 1 container image(s) without digest pin: api=img-5192394b:tag |
+| 210 | `DNSChainDrift` | Ingress `649e263a/649e263a` routes host *host-647db09d* to Service `649e263a/649e263a` (port 80) but that Service does not exist in the cluster. |
+| 211 | `DNSChainDrift` | Ingress `d63f4a0c/ef143c54` routes host *host-bacbe0e8* to Service `d63f4a0c/d63f4a0c` (port 80) but that Service does not exist in the cluster. |
+| 212 | `DNSChainDrift` | Ingress `4b5e57f6/a95e8ed5` routes host *host-6580714c* to Service `4b5e57f6/e1b60c97` (port http) but that Service does not exist in the cluster. |
+| 213 | `DNSChainDrift` | Ingress `4b5e57f6/a95e8ed5` routes host *host-f039a048* to Service `4b5e57f6/e1b60c97` (port http) but that Service does not exist in the cluster. |
+| 214 | `DNSChainDrift` | Ingress `d10f5d3d/0d96ec3b` routes host *host-f1ba8d59* to Service `d10f5d3d/0d96ec3b` (port http) but that Service does not exist in the cluster. |
+| 215 | `DNSChainDrift` | Ingress `42233297/40b33b89` routes host *host-df442be8* to Service `42233297/d98b1c8a` (port 4180) but that Service does not exist in the cluster. |
+| 216 | `DNSChainDrift` | Ingress `25bf6a1d/6750a43a` routes host *host-3b05cb67* to Service `25bf6a1d/93bf22ed` (port 4180) but that Service does not exist in the cluster. |
+| 217 | `DNSChainDrift` | Ingress `7b498b2d/235df681` routes host *host-b9f5e313* to Service `7b498b2d/950ecc2c` (port 5001) but that Service does not exist in the cluster. |
+| 218 | `DNSChainDrift` | Ingress `83ac4576/70054f71` routes host *gharkaam.in* to Service `83ac4576/70054f71` (port http) but that Service does not exist in the cluster. |
+| 219 | `DNSChainDrift` | Ingress `d6bed788/ff95dd66` routes host *host-e5673458* to Service `d6bed788/41baa505` (port 3000) but that Service does not exist in the cluster. |
+| 220 | `DNSChainDrift` | Ingress `6c8f4e88/3354c864` routes host *host-da567b3a* to Service `6c8f4e88/3354c864` (port http-api) but that Service does not exist in the cluster. |
+| 221 | `DNSChainDrift` | Ingress `00d8d3f1/3aa97943` routes host *host-92b1cecb* to Service `00d8d3f1/03b41178` (port 80) but that Service does not exist in the cluster. |
+| 222 | `DNSChainDrift` | Ingress `10182ab8/77b28987` routes host *host-32225d86* to Service `10182ab8/8bd1790c` (port 8000) but that Service does not exist in the cluster. |
+| 223 | `DNSChainDrift` | Ingress `6d7f0086/5ff9b09b` routes host *host-81ab186c* to Service `6d7f0086/9113250d` (port 8080) but that Service does not exist in the cluster. |
+| 224 | `DNSChainDrift` | Ingress `10f9fce6/26a1f8bb` routes host *host-d63bb08e* to Service `10f9fce6/2ec52f7a` (port 4180) but that Service does not exist in the cluster. |
+| 225 | `DNSChainDrift` | Ingress `a2a1e69c/a2a1e69c` routes host *host-5a4ef2ea* to Service `a2a1e69c/a2a1e69c` (port 8080) but that Service does not exist in the cluster. |
+| 226 | `DNSChainDrift` | Ingress `7f8e2ea7/7d3bb9cc` routes host *host-0ccdb59e* to Service `7f8e2ea7/7f8e2ea7` (port http) but that Service does not exist in the cluster. |
+| 227 | `DNSChainDrift` | Ingress `d80dc0a2/a2b0bfbb` routes host *host-29bd8929* to Service `d80dc0a2/12af3905` (port 80) but that Service does not exist in the cluster. |
+| 228 | `DNSChainDrift` | Ingress `7b498b2d/7b498b2d` routes host *host-49116b44* to Service `7b498b2d/7b498b2d` (port 80) but that Service does not exist in the cluster. |
+| 229 | `DNSChainDrift` | Ingress `47c88e9e/975df461` routes host *host-4e3d9acc* to Service `47c88e9e/4d0fcefe` (port 4180) but that Service does not exist in the cluster. |
+| 230 | `DNSChainDrift` | Ingress `5791b622/b2246b4d` routes host *host-2249606b* to Service `5791b622/5791b622` (port 80) but that Service does not exist in the cluster. |
+| 231 | `DNSChainDrift` | Ingress `606299b2/7f3605e0` routes host *host-ca5821c0* to Service `606299b2/8a17086a` (port 4180) but that Service does not exist in the cluster. |
+| 232 | `DNSChainDrift` | Ingress `06024ae9/06024ae9` routes host *host-271e2cd1* to Service `06024ae9/576473d6` (port 80) but that Service does not exist in the cluster. |
+| 233 | `DNSChainDrift` | Ingress `25bf6a1d/7f9e9e02` routes host *host-d947e194* to Service `25bf6a1d/7f9e9e02` (port 3000) but that Service does not exist in the cluster. |
+| 234 | `DNSChainDrift` | Ingress `038740ef/18bb7265` routes host *host-bda455e8* to Service `038740ef/c8918531` (port 4180) but that Service does not exist in the cluster. |
+| 235 | `DNSChainDrift` | Ingress `e6f0a1fb/83d21ef8` routes host *host-eb0db2a5* to Service `e6f0a1fb/e6f0a1fb` (port 8200) but that Service does not exist in the cluster. |
+| 236 | `DNSChainDrift` | Ingress `0ec4366c/67b36f81` routes host *host-a214c828* to Service `0ec4366c/07241358` (port 4180) but that Service does not exist in the cluster. |
+| 237 | `DNSChainDrift` | Ingress `3d69f4a0/3d69f4a0` routes host *host-238e6042* to Service `3d69f4a0/a2909668` (port 4180) but that Service does not exist in the cluster. |
+| 238 | `DNSChainDrift` | Ingress `92b6ff2d/3caa6611` routes host *host-9b16de12* to Service `92b6ff2d/7faa7ec4` (port 8080) but that Service does not exist in the cluster. |
+| 239 | `DNSChainDrift` | Ingress `4b5e57f6/a95e8ed5` routes host *host-ec2da35b* to Service `4b5e57f6/e1b60c97` (port http) but that Service does not exist in the cluster. |
+| 240 | `DNSChainDrift` | Ingress `4b5e57f6/a95e8ed5` routes host *host-064f5f1e* to Service `4b5e57f6/e1b60c97` (port http) but that Service does not exist in the cluster. |
+| 241 | `DNSChainDrift` | Ingress `06024ae9/06024ae9` routes host *host-42d68119* to Service `06024ae9/576473d6` (port 80) but that Service does not exist in the cluster. |
+| 242 | `DNSChainDrift` | Cloudflare credentials not configured; external DNS hop not checked for 32 host(s). Set `CHA_CLOUDFLARE_API_TOKEN` (and optionally `CHA_CLOUDFLARE_ZONE_ID`) to enable the full DNS-chain analysis including the Cloudflare layer. |
+
+</details>
+
 ---
 _All namespace, workload, and secret names are anonymized using deterministic SHA-256 hashing._
-_cha version(s) in this dataset: cluster-health-autopilot-0.9.1-4-g66c47e8, cluster-health-autopilot-0.9.1-5-g665a915, cluster-health-autopilot-1.4.0, cluster-health-autopilot-1.6.0, cluster-health-autopilot-1.8.0-1-g0dcdb96, cluster-health-autopilot-1.8.10, cluster-health-autopilot-1.8.12-16-g76748f8, cluster-health-autopilot-1.8.8, v1.5.2-1-g1e93148, v1.5.2-3-g08ba6f9, v1.6.2-1-gf3bd85c_
+_cha version(s) in this dataset: cluster-health-autopilot-0.9.1-4-g66c47e8, cluster-health-autopilot-0.9.1-5-g665a915, cluster-health-autopilot-1.4.0, cluster-health-autopilot-1.6.0, cluster-health-autopilot-1.8.0-1-g0dcdb96, cluster-health-autopilot-1.8.10, cluster-health-autopilot-1.8.12-16-g76748f8, cluster-health-autopilot-1.8.8, v1.11.1, v1.5.2-1-g1e93148, v1.5.2-3-g08ba6f9, v1.6.2-1-gf3bd85c_
