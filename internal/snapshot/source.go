@@ -82,6 +82,11 @@ var (
 	// explicitly opt out of token mounting are NOT flagged as "unbound".
 	GVRServiceAccount = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "serviceaccounts"}
 
+	// GVRNetworkPolicy is the GVR for networking.k8s.io/v1 NetworkPolicy
+	// objects. Used by SecurityDrift (coverage analyzer) and the Phase
+	// 2d-β NetworkPolicy proposer in pkg/netpol.
+	GVRNetworkPolicy = schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}
+
 	// GVRStorageClass is the GVR for storage.k8s.io/v1 StorageClass objects.
 	// Used by K3sLocalPathStorage to detect the cluster default StorageClass.
 	GVRStorageClass = schema.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}
