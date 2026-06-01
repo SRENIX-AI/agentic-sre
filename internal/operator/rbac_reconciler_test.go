@@ -230,6 +230,35 @@ func TestBuildReaderClusterRole_DriftReportsWriteVerbs(t *testing.T) {
 	}
 }
 
+// TestBuildReaderClusterRole_StatusSubresourceVerbs — v1.12.2 patch.
+// v1.12.1 added lifecycle verbs to driftreports/resolutionrecords but
+// missed the /status subresources (K8s treats them as independent
+// RBAC targets). The watcher emitted "cannot patch
+// driftreports/status" each cycle.
+func TestBuildReaderClusterRole_StatusSubresourceVerbs(t *testing.T) {
+	role := BuildReaderClusterRole()
+	for _, sub := range []string{"driftreports/status", "resolutionrecords/status"} {
+		var matched *rbacv1.PolicyRule
+		for i := range role.Rules {
+			r := &role.Rules[i]
+			if containsString(r.APIGroups, "cha.bionicaisolutions.com") &&
+				containsString(r.Resources, sub) {
+				matched = r
+				break
+			}
+		}
+		if matched == nil {
+			t.Errorf("no rule found for %s — watcher will fail on status updates", sub)
+			continue
+		}
+		for _, v := range []string{"update", "patch"} {
+			if !containsString(matched.Verbs, v) {
+				t.Errorf("%s: missing verb %q (got %v)", sub, v, matched.Verbs)
+			}
+		}
+	}
+}
+
 // --- helpers ---
 
 func hasRule(rules []rbacv1.PolicyRule, group, resource string) bool {
