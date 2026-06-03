@@ -13,7 +13,17 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
-### Added — Watcher mints approve/deny URLs directly (Path B)
+### Added — Release-source detection (`pkg/releasesrc`, Phase 2d-γ-3 slice 1)
+
+- **`pkg/releasesrc`** — new public package finds the file + line in a release-source repo where a workload's image tag is declared. Keystone for the paid-tier digest-pin proposer: without knowing which `values.yaml` line holds `image.tag`, the proposer can't construct a one-line patch.
+- **`DetectInHelmValues(ctx, files, chartName, expectRepository) → *ImageRef`** — probes `charts/<chartName>/values.yaml` (umbrella layout) then `values.yaml` (single-chart root). Decodes the conventional `image: {repository, tag}` shape via `sigs.k8s.io/yaml`, requires `image.repository` to match `expectRepository` (guards against false matches in umbrella charts that ship multiple subchart blocks). Returns `ErrNotFound` cleanly when nothing matches; transport errors propagate unchanged.
+- **`ImageRef{File, Line, KeyPath, CurrentTag, Repository}`** — `Line` is 1-based for editor/`git blame` parity. `KeyPath` is a dot-separated YAML walk (today: always `"image.tag"`). Line lookup uses a regex anchor (`image:` header → first `tag:` line below it) because `sigs.k8s.io/yaml` doesn't preserve positions.
+- **`RepoFiles` interface** — minimal `Get(path) → bytes` + `List(patterns) → []string`. Defined in OSS so cha-com's forge client can implement it via a per-`(owner, repo, ref)` adapter without OSS taking a forge dependency.
+- **Security defenses** — chart-name input is sanitized to `path.Base()` so a hostile `"../../etc"` chart name can't escape the chart dir. Empty `expectRepository` is rejected (would match every image block). Garbled YAML in one candidate file doesn't abort the probe — falls through to the next path.
+- **13 test cases** — happy-path umbrella + happy-path root layouts, repo-mismatch silently skipped, missing tag returns NotFound, garbled YAML doesn't crash, all-paths-missing returns NotFound, true transport error propagates, nil-files / empty-expectRepository guards, empty chart name falls back to root only, path-traversal sanitization, exact line-number calculation, unquoted-numeric-tag handling.
+- **Not yet wired** into any proposer — pure library slice. Foundation for **slice 2** (cha-com Forge → RepoFiles adapter + DigestPinProposer that consumes the v1.16.0+ workload feeder's `kind=workload` entries + this detector → forge.CreatePullRequest → Slack Approve/Deny buttons on every digest-pin warning). Argo CD Application + Kustomize + Flux HelmRelease detectors will join in follow-up slices.
+
+### Added — Workload feeder (Phase 2d-γ-2, RAG foundation slice)
 
 - **`pkg/ai/manifest_bridge.go`** — new public `ManifestBridge` (implements `FixProposer`) that converts `Diagnostic.ProposedPolicyYAML` into a signed `ApplyManifest` `AIProposedAction` via the existing safe-apply validator (closed Kind whitelist + per-Kind shape; NetworkPolicy is the v1.15.0 entry). Refusal classes — egress in `policyTypes`, unsupported Kind, protected namespace, non-yaml — quietly return `nil` (no URL minted on dangerous YAML).
 - **`pkg/ai/signer.go`** — Ed25519 signer ported from cha-com (was proprietary, now Apache-2.0). Disk-backed (base64 raw bytes), trailing-whitespace tolerant, env-var fallback (`CHA_SIGNING_KEY_PATH`), `ErrSigningKeyMissing` sentinel for graceful fall-through. `GenerateAndPersistSigningKey()` for bootstrap.
