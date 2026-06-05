@@ -13,6 +13,27 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.19.0] — 2026-06-05
+
+### Added — Per-cycle delta render: "🆕 New this cycle" + stable-collapse + opt-in no-change digest (PR #165)
+
+Operators reading #ceph-critical can't tell at-a-glance which findings just appeared vs. which are stale-but-getting-reposted. With 50+ findings per cycle the "what should I look at right now" signal drowns. Three signal:noise improvements layered together:
+
+- **"🆕 New this cycle (N):" section** renders ABOVE the legacy critical/diagnostics list. `watcher.diff()` marks `entry.isNewThisCycle=true` on new-subject + fp-changed paths, false on repeat-interval re-posts. Zero-count section headers are suppressed (no `(0)` clutter).
+- **Stable-collapse** (always on when new findings exist): the steady-state list collapses to a single `"…and N other stable finding(s) already posted in earlier cycles"` line. Cycles with 0 new findings render stable in full (operator is reading the periodic re-post — every finding matters).
+- **"✨ No new issues" digest** (opt-in via `--slack-no-change-digest=true`): on cycles where `newCount == 0 && resolved == 0 && stable > 0`, replaces the full re-post with a compact steady-state confirmation. Default OFF to preserve byte-identical legacy behaviour.
+
+Wiring chain: `cmd/cha --slack-no-change-digest` → `watcher.Config.NoChangeSlackDigest` → `report.RouteAndPostConfig` → `report.SplitCriticalPayloadsConfig` → `report.emitNoChangeDigest`. Legacy entry points (`SplitCriticalPayloads`, `RouteAndPost`) preserved as zero-config delegates.
+
+### Fixed — Substitute placeholders in remediations (PVC StorageClass, Deployment selector) (PR #164)
+
+Analyzer remediations contained literal `<placeholder>` tokens the operator was expected to substitute by hand. The AI tier surfacing these diagnostics had no way to interpret them, and operators reading Slack alerts had no way to act without manual lookup.
+
+- **`capacity_drift.go` (PVC expansion stuck)**: looks up the PVC's `spec.storageClassName`, fetches the StorageClass from the snapshot, and emits one branch-collapsed remediation per `allowVolumeExpansion` value. `<name>` placeholder no longer leaks even in fallback paths (SC unknown / no `spec.storageClassName`).
+- **`config_drift.go` (Deployment rollout stuck)**: reads `spec.selector.matchLabels` and renders the actual `-l key=val,...` flag (keys sorted for stable output). The kubectl proposer can now generate concrete commands instead of templates.
+
+Out-of-scope tokens audited + kept as-is when they represent operator-intent input (e.g. `<svc-name>:<port>` for an Ingress whose backend Service doesn't exist yet) or legitimate format literals (`@sha256:<digest>`).
+
 ## [1.18.3] — 2026-06-05
 
 ### Fixed — Slack-bound AI tier fields restored via seenEntryToDeltaDiag helper (PR #160)
