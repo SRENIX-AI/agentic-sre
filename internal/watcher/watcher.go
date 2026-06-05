@@ -116,6 +116,15 @@ type Config struct {
 	// post-fix to report accurate state.
 	RunRemediation bool
 	DryRun         bool
+
+	// NoChangeSlackDigest enables the compact "✨ No new issues since
+	// last cycle" Slack render path. When true AND a cycle produces zero
+	// new findings AND zero resolved transitions AND at least one stable
+	// re-post would have fired, the renderer emits a single-line
+	// steady-state confirmation instead of re-listing every active
+	// finding. Default false — operators opt in once they're comfortable
+	// the suppression doesn't hide real signal.
+	NoChangeSlackDigest bool
 }
 
 // watchedGVRs is the set of resource types that trigger a diagnose cycle on change.
@@ -427,7 +436,8 @@ func (w *Watcher) runCycle(ctx context.Context) {
 		(w.cfg.RunRemediation && !w.cfg.DryRun && hasActions(fixResults))
 
 	if needsSlack && (w.cfg.SlackChannels.Alerts != "" || w.cfg.SlackChannels.Critical != "") {
-		report.RouteAndPost(nil, w.cfg.SlackChannels, postFixSubjects, toPostDiags, toResolveDiags, fixResults)
+		report.RouteAndPostConfig(nil, w.cfg.SlackChannels, postFixSubjects, toPostDiags, toResolveDiags, fixResults,
+			report.CriticalRenderConfig{NoChangeDigest: w.cfg.NoChangeSlackDigest})
 	}
 
 	if w.cfg.WriteDriftReports {

@@ -120,13 +120,49 @@ const maxSlackAttachmentChars = 35000
 // header and any critical findings; subsequent chunks add a "(part N/M)"
 // indicator and continue with diagnostics. Resolved findings stay in the
 // last chunk (they're typically small).
+// CriticalRenderConfig is the typed knob bag for SplitCriticalPayloadsConfig.
+// Zero value = identical to legacy SplitCriticalPayloads behaviour, so
+// every existing caller is byte-equivalent.
+type CriticalRenderConfig struct {
+	// NoChangeDigest, when true AND there are zero new findings AND
+	// zero resolved transitions, replaces the full re-render of all
+	// stable findings with a compact "✨ No new issues since last
+	// cycle (steady state at N findings)" digest. Default false to
+	// preserve legacy behaviour — opt in when the operator wants the
+	// signal-to-noise win on quiet cycles.
+	NoChangeDigest bool
+}
+
+// SplitCriticalPayloads is the legacy entry point. Renders the same as
+// SplitCriticalPayloadsConfig with a zero CriticalRenderConfig. Kept so
+// existing callers compile + behave identically.
 func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []SlackPayload {
+	return SplitCriticalPayloadsConfig(unfixable, resolved, CriticalRenderConfig{})
+}
+
+// SplitCriticalPayloadsConfig is the configurable variant.
+//
+// Phase 1.E layering, top-down:
+//  1. NoChangeDigest mode (opt-in): empty new + empty resolved + N
+//     stable → ONE payload with a "✨ No new issues since last cycle"
+//     digest. Zero findings entirely → no payload (skip the post).
+//  2. "🆕 New this cycle (N):" section ALWAYS renders first when any
+//     IsNewThisCycle finding is present.
+//  3. Stable-collapse: when new findings exist, the steady-state list
+//     collapses to a one-line "…and N other stable findings" summary
+//     so the new-section visibility isn't drowned. When no new findings
+//     exist, stable renders in full (operator is reading the periodic
+//     re-post, not a delta — every finding matters).
+//  4. The legacy "🔴 Critical / ⚠️ Diagnostics" sections render only
+//     the stable subset when a stable-collapse is NOT in effect.
+func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag, cfg CriticalRenderConfig) []SlackPayload {
 	// Render each finding to its own string so we can group greedily.
 	// Phase 1.E: also partition by IsNewThisCycle so the renderer can
 	// surface a "🆕 New this cycle" section ABOVE the steady-state list.
 	var critRendered, diagRendered []string
 	var newRendered []string
 	var newCount int
+	var stableCritCount, stableDiagCount int
 	for _, d := range unfixable {
 		var b strings.Builder
 		if d.Severity == "critical" {
@@ -146,9 +182,37 @@ func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []Sla
 		}
 		if d.Severity == "critical" {
 			critRendered = append(critRendered, b.String())
+			stableCritCount++
 		} else {
 			diagRendered = append(diagRendered, b.String())
+			stableDiagCount++
 		}
+	}
+
+	// No-change digest: opted in via cfg, and nothing has changed since
+	// the last cycle. Return either a compact digest or nothing at all.
+	if cfg.NoChangeDigest && newCount == 0 && len(resolved) == 0 {
+		stableTotal := stableCritCount + stableDiagCount
+		if stableTotal == 0 {
+			// Truly nothing to say. Don't post.
+			return nil
+		}
+		return emitNoChangeDigest(stableTotal)
+	}
+
+	// Stable-collapse: when new findings exist, the steady-state list
+	// becomes a 1-line summary so the new-section visibility is preserved.
+	// When no new findings exist, render stable in full (this is the
+	// re-post path; operators need the complete list).
+	var stableSummary string
+	if newCount > 0 && (stableCritCount+stableDiagCount) > 0 {
+		stableSummary = fmt.Sprintf(
+			"_…and %d other stable finding%s already posted in earlier cycles._\n",
+			stableCritCount+stableDiagCount,
+			plural(stableCritCount+stableDiagCount),
+		)
+		critRendered = nil
+		diagRendered = nil
 	}
 
 	// Resolved section: small, kept whole.
@@ -225,6 +289,15 @@ func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []Sla
 			cur.WriteString(r)
 		}
 	}
+	if stableSummary != "" {
+		if cur.Len()+len(stableSummary) > maxSlackAttachmentChars {
+			chunks = append(chunks, cur.String())
+			cur.Reset()
+			cur.WriteString(headerLine)
+		}
+		cur.WriteString("\n")
+		cur.WriteString(stableSummary)
+	}
 	if resolvedSection != "" {
 		if cur.Len()+len(resolvedSection) > maxSlackAttachmentChars {
 			chunks = append(chunks, cur.String())
@@ -276,6 +349,43 @@ func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []Sla
 		})
 	}
 	return out
+}
+
+// emitNoChangeDigest renders the single-payload "✨ No new issues since
+// last cycle" digest used when SplitCriticalPayloadsConfig is in
+// NoChangeDigest mode and nothing has changed since the prior cycle.
+// The header timestamp lets operators confirm at-a-glance that the
+// watcher is alive (the alternative — silently skipping the post —
+// is indistinguishable from a crashed agent).
+func emitNoChangeDigest(stableTotal int) []SlackPayload {
+	text := fmt.Sprintf(
+		"*CHA Alert — Human Action Required* — %s\n\n"+
+			"*✨ No new issues since last cycle* — steady state at %d finding%s. "+
+			"_Run `cha diagnose` or check #ceph-critical history for the active list._\n",
+		time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
+		stableTotal, plural(stableTotal),
+	)
+	return []SlackPayload{{
+		Username:  "Cluster Health Monitor",
+		IconEmoji: ":rotating_light:",
+		Attachments: []SlackAttachment{{
+			Color:    "warning", // still problems — just no NEW problems
+			Text:     text,
+			Footer:   "CHA — Human action required",
+			Ts:       time.Now().UTC().Unix(),
+			MrkdwnIn: []string{"text"},
+		}},
+	}}
+}
+
+// plural returns "s" when n != 1, empty otherwise. Used by the
+// digest/summary lines so "1 finding" stays grammatical without
+// special-casing each call site.
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // FormatCriticalPayload renders the #ceph-critical message for a watcher cycle
@@ -377,6 +487,21 @@ func RouteAndPost(
 	toResolve []ResolvedDiag,
 	fixResults []fix.Result,
 ) {
+	RouteAndPostConfig(client, channels, postFixSubjects, toPost, toResolve, fixResults, CriticalRenderConfig{})
+}
+
+// RouteAndPostConfig is the configurable variant. Same behaviour as
+// RouteAndPost with the addition of cfg, which currently controls the
+// no-change digest opt-in. Default-value cfg = identical to RouteAndPost.
+func RouteAndPostConfig(
+	client *http.Client,
+	channels SlackChannels,
+	postFixSubjects map[string]bool,
+	toPost []DeltaDiag,
+	toResolve []ResolvedDiag,
+	fixResults []fix.Result,
+	cfg CriticalRenderConfig,
+) {
 	var fixedIssues, unfixable []DeltaDiag
 	for _, d := range toPost {
 		if postFixSubjects[d.Subject] {
@@ -424,7 +549,7 @@ func RouteAndPost(
 			}
 			return unfixable[i].Subject < unfixable[j].Subject
 		})
-		payloads := SplitCriticalPayloads(unfixable, toResolve)
+		payloads := SplitCriticalPayloadsConfig(unfixable, toResolve, cfg)
 		urlCount := 0
 		for _, d := range unfixable {
 			if d.ApprovalURL != "" {
