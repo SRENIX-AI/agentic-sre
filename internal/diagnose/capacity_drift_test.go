@@ -99,6 +99,27 @@ func makePVC(ns, name, requested, capacity string, conds []map[string]interface{
 	return u
 }
 
+func makePVCWithSC(ns, name, requested, capacity, sc string, conds []map[string]interface{}, createdAgo time.Duration) unstructured.Unstructured {
+	u := makePVC(ns, name, requested, capacity, conds, createdAgo)
+	if sc != "" {
+		_ = unstructured.SetNestedField(u.Object, sc, "spec", "storageClassName")
+	}
+	return u
+}
+
+func makeStorageClass(name string, allowExpansion *bool) unstructured.Unstructured {
+	u := unstructured.Unstructured{}
+	u.SetAPIVersion("storage.k8s.io/v1")
+	u.SetKind("StorageClass")
+	u.SetName(name)
+	if allowExpansion != nil {
+		_ = unstructured.SetNestedField(u.Object, *allowExpansion, "allowVolumeExpansion")
+	}
+	return u
+}
+
+func ptrBool(b bool) *bool { return &b }
+
 // --- HPA signals ---
 
 func TestCapacityDrift_HealthyHPA_NoFinding(t *testing.T) {
@@ -345,6 +366,119 @@ func TestCapacityDrift_PVCYoungerThanGrace_Silent(t *testing.T) {
 	got := CapacityDrift{}.Run(context.Background(), src)
 	if len(got) != 0 {
 		t.Errorf("PVC younger than grace should be silent; got: %+v", got)
+	}
+}
+
+// --- PVC remediation: StorageClass-aware placeholder substitution ---
+//
+// The remediation text historically contained a literal `<name>` token
+// the operator was expected to manually substitute (`kubectl get
+// storageclass <name> ...`). Operators (and the AI tier reading the
+// diagnostic) had no way to know which StorageClass to ask about.
+//
+// These tests pin the contract: the remediation must name the actual
+// SC, and must collapse the conditional branch ("if false, expansion is
+// impossible — migrate" vs "if true, inspect CSI logs") into the single
+// answer that applies to this PVC's SC.
+
+func TestCapacityDrift_PVCExpansionStuck_SCAllowsExpansion_RemediationCitesSCAndCSI(t *testing.T) {
+	src := &memSourceCap{byResource: map[string][]unstructured.Unstructured{
+		"persistentvolumeclaims": {
+			makePVCWithSC("app", "data", "50Gi", "10Gi", "rook-ceph-block", nil, 2*time.Hour),
+		},
+		"storageclasses": {
+			makeStorageClass("rook-ceph-block", ptrBool(true)),
+		},
+	}}
+	got := CapacityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d: %+v", len(got), got)
+	}
+	rem := got[0].Remediation
+	if strings.Contains(rem, "<name>") {
+		t.Errorf("remediation must not contain literal <name>; got: %s", rem)
+	}
+	if !strings.Contains(rem, "rook-ceph-block") {
+		t.Errorf("remediation should name the actual StorageClass; got: %s", rem)
+	}
+	if !strings.Contains(rem, "allowVolumeExpansion=true") && !strings.Contains(rem, "allows volume expansion") {
+		t.Errorf("remediation should state SC allows expansion; got: %s", rem)
+	}
+	if strings.Contains(rem, "migrate") {
+		t.Errorf("when SC allows expansion, remediation should NOT advise migration; got: %s", rem)
+	}
+}
+
+func TestCapacityDrift_PVCExpansionStuck_SCDeniesExpansion_RemediationSaysMigrate(t *testing.T) {
+	src := &memSourceCap{byResource: map[string][]unstructured.Unstructured{
+		"persistentvolumeclaims": {
+			makePVCWithSC("app", "data", "50Gi", "10Gi", "local-path", nil, 2*time.Hour),
+		},
+		"storageclasses": {
+			makeStorageClass("local-path", ptrBool(false)),
+		},
+	}}
+	got := CapacityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d: %+v", len(got), got)
+	}
+	rem := got[0].Remediation
+	if strings.Contains(rem, "<name>") {
+		t.Errorf("remediation must not contain literal <name>; got: %s", rem)
+	}
+	if !strings.Contains(rem, "local-path") {
+		t.Errorf("remediation should name the actual StorageClass; got: %s", rem)
+	}
+	if !strings.Contains(rem, "expansion is impossible") && !strings.Contains(rem, "does not support") {
+		t.Errorf("when SC denies expansion, remediation should say expansion is impossible; got: %s", rem)
+	}
+	if !strings.Contains(rem, "migrate") {
+		t.Errorf("when SC denies expansion, remediation should advise migration to a larger PVC; got: %s", rem)
+	}
+}
+
+func TestCapacityDrift_PVCExpansionStuck_SCAllowExpansionUnset_RemediationFallsBack(t *testing.T) {
+	// allowVolumeExpansion unset defaults to false in K8s, but we don't
+	// want to silently assert that. The remediation should still NAME the
+	// SC (operators benefit even if the branch is generic) and should not
+	// leak the literal `<name>` token.
+	src := &memSourceCap{byResource: map[string][]unstructured.Unstructured{
+		"persistentvolumeclaims": {
+			makePVCWithSC("app", "data", "50Gi", "10Gi", "weird-sc", nil, 2*time.Hour),
+		},
+		"storageclasses": {
+			makeStorageClass("weird-sc", nil),
+		},
+	}}
+	got := CapacityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d: %+v", len(got), got)
+	}
+	rem := got[0].Remediation
+	if strings.Contains(rem, "<name>") {
+		t.Errorf("remediation must not contain literal <name>; got: %s", rem)
+	}
+	if !strings.Contains(rem, "weird-sc") {
+		t.Errorf("remediation should still name the SC; got: %s", rem)
+	}
+}
+
+func TestCapacityDrift_PVCExpansionStuck_NoStorageClassName_NoPlaceholderLeak(t *testing.T) {
+	// PVC without spec.storageClassName (rare — cluster default SC was used
+	// implicitly, and the binding controller didn't fill it in). The
+	// remediation must not leak the literal `<name>` token even in this
+	// degraded path.
+	src := &memSourceCap{byResource: map[string][]unstructured.Unstructured{
+		"persistentvolumeclaims": {
+			makePVC("app", "data", "50Gi", "10Gi", nil, 2*time.Hour),
+		},
+	}}
+	got := CapacityDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d: %+v", len(got), got)
+	}
+	if strings.Contains(got[0].Remediation, "<name>") {
+		t.Errorf("remediation must not contain literal <name>; got: %s", got[0].Remediation)
 	}
 }
 
