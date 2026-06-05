@@ -206,3 +206,247 @@ func TestRouteAndPost_ActionableFindingsBubbleToTop(t *testing.T) {
 		t.Errorf("actionable finding should appear BEFORE noise; actionable@%d noise@%d", firstActionable, firstNoise)
 	}
 }
+
+// --- Per-cycle delta render (Phase 1.E) ---
+//
+// Operators reading #ceph-critical can't tell at-a-glance which findings
+// are new this cycle vs. stale-and-re-posted. With 50+ findings per
+// digest, the "what should I look at right now" signal drowns. The
+// DeltaDiag.IsNewThisCycle flag, set by the watcher's diff(), drives
+// a "🆕 New this cycle (N)" section that renders BEFORE the steady-state
+// section.
+
+func TestSplitCriticalPayloads_NewThisCycleSectionAppears(t *testing.T) {
+	// Two new + three stable critical findings. With Phase 1.E.5
+	// stable-collapse, the new section appears in full and the stable
+	// findings collapse to a single "…and 3 other stable finding(s)"
+	// line so the new section's visibility isn't drowned.
+	unfixable := []DeltaDiag{
+		{Subject: "Pod/ns/stable-1", Severity: "critical", Message: "still broken"},
+		{Subject: "Pod/ns/stable-2", Severity: "critical", Message: "still broken"},
+		{Subject: "Pod/ns/new-a", Severity: "critical", Message: "just appeared", IsNewThisCycle: true},
+		{Subject: "Pod/ns/stable-3", Severity: "critical", Message: "still broken"},
+		{Subject: "Pod/ns/new-b", Severity: "critical", Message: "just appeared", IsNewThisCycle: true},
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	if len(payloads) == 0 {
+		t.Fatal("expected ≥ 1 payload")
+	}
+	chunk1 := payloads[0].Attachments[0].Text
+	if !strings.Contains(chunk1, "🆕 New this cycle (2)") {
+		t.Errorf("missing '🆕 New this cycle (2)' header; got:\n%s", chunk1)
+	}
+	// Both new subjects must appear.
+	if !strings.Contains(chunk1, "Pod/ns/new-a") || !strings.Contains(chunk1, "Pod/ns/new-b") {
+		t.Errorf("both new-this-cycle subjects must appear; got:\n%s", chunk1)
+	}
+	// New subjects must appear BEFORE the stable summary line.
+	idxNewA := strings.Index(chunk1, "Pod/ns/new-a")
+	idxSummary := strings.Index(chunk1, "3 other stable finding")
+	if idxSummary < 0 {
+		t.Errorf("expected '3 other stable finding' summary; got:\n%s", chunk1)
+	} else if idxNewA > idxSummary {
+		t.Errorf("new-this-cycle finding should render BEFORE the stable summary; new-a@%d summary@%d", idxNewA, idxSummary)
+	}
+	// Stable subjects must NOT appear individually (they're collapsed).
+	if strings.Contains(chunk1, "Pod/ns/stable-1") {
+		t.Errorf("stable subjects should be collapsed when new exists; got:\n%s", chunk1)
+	}
+}
+
+func TestSplitCriticalPayloads_AllStable_NoNewSection(t *testing.T) {
+	// When nothing is new this cycle, the "🆕 New this cycle" section
+	// must NOT appear at all — no zero-count clutter.
+	unfixable := []DeltaDiag{
+		{Subject: "Pod/ns/x", Severity: "critical", Message: "still broken"},
+		{Subject: "Pod/ns/y", Severity: "warning", Message: "still broken"},
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	chunk1 := payloads[0].Attachments[0].Text
+	if strings.Contains(chunk1, "🆕 New this cycle") {
+		t.Errorf("no new findings should mean no '🆕 New this cycle' section; got:\n%s", chunk1)
+	}
+}
+
+func TestSplitCriticalPayloads_AllNew_AllUnderNewSection(t *testing.T) {
+	// When every finding is new, all of them belong in the new-section
+	// and there should be no leftover stable-section header.
+	unfixable := []DeltaDiag{
+		{Subject: "Pod/ns/a", Severity: "critical", Message: "just appeared", IsNewThisCycle: true},
+		{Subject: "Pod/ns/b", Severity: "warning", Message: "just appeared", IsNewThisCycle: true},
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	chunk1 := payloads[0].Attachments[0].Text
+	if !strings.Contains(chunk1, "🆕 New this cycle (2)") {
+		t.Errorf("expected '🆕 New this cycle (2)' header; got:\n%s", chunk1)
+	}
+	// The legacy "🔴 Critical (...)" + "⚠️ Diagnostics (...)" headers
+	// should NOT appear independently when there are 0 stable findings —
+	// they'd just show "(0)" which is clutter.
+	if strings.Contains(chunk1, "Critical (0)") || strings.Contains(chunk1, "Diagnostics (0)") {
+		t.Errorf("zero-count section headers should be suppressed; got:\n%s", chunk1)
+	}
+}
+
+// --- Stable-collapse (Phase 1.E.4-5) ---
+//
+// When there ARE new findings this cycle, the steady-state list is
+// noise the operator already saw last time. Collapse it to a one-liner
+// "…and N other stable findings" so the new-section visibility isn't
+// drowned. When there are NO new findings, render everything normally
+// (the operator is looking at the full re-post, not the delta — every
+// finding matters).
+
+func TestSplitCriticalPayloads_StableCollapseWhenNewExists(t *testing.T) {
+	// 2 new + 48 stable. Stable section should collapse to a single
+	// summary line; the 48 subjects MUST NOT appear individually.
+	unfixable := make([]DeltaDiag, 0, 50)
+	unfixable = append(unfixable,
+		DeltaDiag{Subject: "Pod/ns/new-a", Severity: "critical", Message: "just appeared", IsNewThisCycle: true},
+		DeltaDiag{Subject: "Pod/ns/new-b", Severity: "warning", Message: "just appeared", IsNewThisCycle: true},
+	)
+	for i := 0; i < 48; i++ {
+		unfixable = append(unfixable, DeltaDiag{
+			Subject:  fmt.Sprintf("Pod/ns/stable-%02d", i),
+			Severity: "critical",
+			Message:  "long-running broken state",
+		})
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	all := ""
+	for _, p := range payloads {
+		all += p.Attachments[0].Text
+	}
+	// Stable-collapse summary line MUST appear.
+	if !strings.Contains(all, "48 other stable finding") {
+		t.Errorf("expected stable-collapse summary 'N other stable finding'; got:\n%s", all[:min(2000, len(all))])
+	}
+	// Stable subjects must NOT appear individually.
+	for i := 0; i < 48; i++ {
+		needle := fmt.Sprintf("Pod/ns/stable-%02d", i)
+		if strings.Contains(all, needle) {
+			t.Errorf("stable subject %s should have been collapsed; rendered individually", needle)
+		}
+	}
+	// New subjects MUST still appear individually.
+	if !strings.Contains(all, "Pod/ns/new-a") || !strings.Contains(all, "Pod/ns/new-b") {
+		t.Errorf("new-this-cycle subjects must still appear individually")
+	}
+}
+
+func TestSplitCriticalPayloads_NoCollapseWhenNoNew(t *testing.T) {
+	// 0 new + 50 stable. Stable findings must render fully — the
+	// operator is reading the periodic re-post, not a delta.
+	unfixable := make([]DeltaDiag, 0, 50)
+	for i := 0; i < 50; i++ {
+		unfixable = append(unfixable, DeltaDiag{
+			Subject:  fmt.Sprintf("Pod/ns/stable-%02d", i),
+			Severity: "critical",
+			Message:  "broken",
+		})
+	}
+	payloads := SplitCriticalPayloads(unfixable, nil)
+	all := ""
+	for _, p := range payloads {
+		all += p.Attachments[0].Text
+	}
+	// No collapse line should be present.
+	if strings.Contains(all, "other stable finding") {
+		t.Errorf("must not collapse when there are no new findings; got summary line")
+	}
+	// All 50 subjects render.
+	for i := 0; i < 50; i++ {
+		needle := fmt.Sprintf("Pod/ns/stable-%02d", i)
+		if !strings.Contains(all, needle) {
+			t.Errorf("subject %s should render when nothing is new", needle)
+		}
+	}
+}
+
+// --- No-change digest (Phase 1.E.6-7) ---
+//
+// When new == 0, resolved == 0, and stable > 0, the watcher is going
+// to post anyway (repeat-interval elapsed). Render a compact "✨ No
+// new issues since last cycle (steady state at N findings)" digest
+// instead of re-rendering the same 50 findings the operator saw an
+// hour ago. Configurable via the new SuppressNoChangeRender option
+// (default off — opt-in to preserve byte-identical behaviour for
+// existing tests + deployments).
+
+func TestSplitCriticalPayloadsConfig_NoChangeDigest_WhenEnabled(t *testing.T) {
+	unfixable := make([]DeltaDiag, 0, 5)
+	for i := 0; i < 5; i++ {
+		unfixable = append(unfixable, DeltaDiag{
+			Subject:  fmt.Sprintf("Pod/ns/stable-%02d", i),
+			Severity: "critical",
+			Message:  "broken",
+		})
+	}
+	payloads := SplitCriticalPayloadsConfig(unfixable, nil, CriticalRenderConfig{NoChangeDigest: true})
+	if len(payloads) != 1 {
+		t.Fatalf("no-change digest is a single payload; got %d", len(payloads))
+	}
+	text := payloads[0].Attachments[0].Text
+	if !strings.Contains(text, "✨ No new issues since last cycle") {
+		t.Errorf("expected no-change digest header; got:\n%s", text)
+	}
+	if !strings.Contains(text, "steady state at 5 findings") {
+		t.Errorf("expected steady-state count; got:\n%s", text)
+	}
+	// Individual subjects MUST NOT appear — the whole point is to elide
+	// the re-rendered noise.
+	for i := 0; i < 5; i++ {
+		if strings.Contains(text, fmt.Sprintf("Pod/ns/stable-%02d", i)) {
+			t.Errorf("no-change digest must not render individual subjects")
+		}
+	}
+}
+
+func TestSplitCriticalPayloadsConfig_NoChangeDigest_ReturnsNilOnZeroFindings(t *testing.T) {
+	// 0 stable + 0 new + 0 resolved → no payload at all (skip the post).
+	payloads := SplitCriticalPayloadsConfig(nil, nil, CriticalRenderConfig{NoChangeDigest: true})
+	if len(payloads) != 0 {
+		t.Errorf("no findings should yield no payload; got %d", len(payloads))
+	}
+}
+
+func TestSplitCriticalPayloadsConfig_NoChangeDigest_FallsThroughWhenNewExists(t *testing.T) {
+	// If anything IS new, even the no-change-digest config still renders
+	// the full delta (because there IS a change).
+	unfixable := []DeltaDiag{
+		{Subject: "Pod/ns/new-a", Severity: "critical", Message: "broken", IsNewThisCycle: true},
+		{Subject: "Pod/ns/stable-1", Severity: "critical", Message: "broken"},
+	}
+	payloads := SplitCriticalPayloadsConfig(unfixable, nil, CriticalRenderConfig{NoChangeDigest: true})
+	if len(payloads) == 0 {
+		t.Fatal("expected ≥ 1 payload")
+	}
+	text := payloads[0].Attachments[0].Text
+	if strings.Contains(text, "✨ No new issues") {
+		t.Errorf("must NOT emit no-change digest when new findings exist; got:\n%s", text)
+	}
+	if !strings.Contains(text, "Pod/ns/new-a") {
+		t.Errorf("new finding must still render; got:\n%s", text)
+	}
+}
+
+func TestSplitCriticalPayloadsConfig_NoChangeDigest_FallsThroughWhenResolvedExists(t *testing.T) {
+	// Resolved transitions are also "changes" — even with no new
+	// findings, render the resolved list normally rather than the
+	// no-change digest.
+	unfixable := []DeltaDiag{
+		{Subject: "Pod/ns/stable-1", Severity: "critical", Message: "broken"},
+	}
+	resolved := []ResolvedDiag{{Subject: "Pod/ns/was-broken", Message: "now fine"}}
+	payloads := SplitCriticalPayloadsConfig(unfixable, resolved, CriticalRenderConfig{NoChangeDigest: true})
+	if len(payloads) == 0 {
+		t.Fatal("expected ≥ 1 payload")
+	}
+	text := payloads[0].Attachments[0].Text
+	if strings.Contains(text, "✨ No new issues") {
+		t.Errorf("must NOT emit no-change digest when resolved exists; got:\n%s", text)
+	}
+	if !strings.Contains(text, "Pod/ns/was-broken") {
+		t.Errorf("resolved finding must still render")
+	}
+}

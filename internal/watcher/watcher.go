@@ -116,6 +116,15 @@ type Config struct {
 	// post-fix to report accurate state.
 	RunRemediation bool
 	DryRun         bool
+
+	// NoChangeSlackDigest enables the compact "✨ No new issues since
+	// last cycle" Slack render path. When true AND a cycle produces zero
+	// new findings AND zero resolved transitions AND at least one stable
+	// re-post would have fired, the renderer emits a single-line
+	// steady-state confirmation instead of re-listing every active
+	// finding. Default false — operators opt in once they're comfortable
+	// the suppression doesn't hide real signal.
+	NoChangeSlackDigest bool
 }
 
 // watchedGVRs is the set of resource types that trigger a diagnose cycle on change.
@@ -156,6 +165,14 @@ type seenEntry struct {
 	enrichment       string
 	proposedActionID string
 	approvalURL      string
+
+	// isNewThisCycle is set by diff() when the entry is being posted
+	// because it's a new subject or its fingerprint changed since the
+	// last cycle (as opposed to a repeat-interval re-post of a stable
+	// finding). The routing layer surfaces these in a dedicated "🆕 New
+	// this cycle" section so operators can tell at-a-glance what
+	// changed since their last look at #ceph-critical.
+	isNewThisCycle bool
 }
 
 // Watcher runs an event-driven diagnose loop against a live cluster.
@@ -419,7 +436,8 @@ func (w *Watcher) runCycle(ctx context.Context) {
 		(w.cfg.RunRemediation && !w.cfg.DryRun && hasActions(fixResults))
 
 	if needsSlack && (w.cfg.SlackChannels.Alerts != "" || w.cfg.SlackChannels.Critical != "") {
-		report.RouteAndPost(nil, w.cfg.SlackChannels, postFixSubjects, toPostDiags, toResolveDiags, fixResults)
+		report.RouteAndPostConfig(nil, w.cfg.SlackChannels, postFixSubjects, toPostDiags, toResolveDiags, fixResults,
+			report.CriticalRenderConfig{NoChangeDigest: w.cfg.NoChangeSlackDigest})
 	}
 
 	if w.cfg.WriteDriftReports {
@@ -575,6 +593,7 @@ func seenEntryToDeltaDiag(e *seenEntry) report.DeltaDiag {
 		Enrichment:       e.enrichment,
 		ProposedActionID: e.proposedActionID,
 		ApprovalURL:      e.approvalURL,
+		IsNewThisCycle:   e.isNewThisCycle,
 	}
 }
 
@@ -609,11 +628,16 @@ func (w *Watcher) diff(current map[string]*seenEntry) (toPost, toResolve []*seen
 	for subject, entry := range current {
 		existing, seen := w.seen[subject]
 		if !seen || existing.fp != entry.fp {
+			// First sighting OR fingerprint changed — flag so the
+			// routing layer can surface this under "🆕 New this cycle".
+			entry.isNewThisCycle = true
 			toPost = append(toPost, entry)
 			continue
 		}
 		interval := w.repeatIntervalFor(entry.severity)
 		if interval > 0 && now.Sub(existing.lastPosted) >= interval {
+			// Re-post of a stable finding — NOT new this cycle.
+			entry.isNewThisCycle = false
 			toPost = append(toPost, entry)
 		}
 	}
