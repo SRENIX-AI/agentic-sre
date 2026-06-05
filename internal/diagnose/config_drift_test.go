@@ -77,6 +77,21 @@ func makeDeploy(ns, name string, gen, observed, replicas, updated, available int
 	return u
 }
 
+// makeDeployWithSelector is makeDeploy + spec.selector.matchLabels populated.
+// Used by tests that exercise the rollout-stuck remediation, which now
+// reads the selector to render the actual `-l key=val,...` flag.
+func makeDeployWithSelector(ns, name string, gen, observed, replicas, updated, available int64, createdAgo time.Duration, matchLabels map[string]string) unstructured.Unstructured {
+	u := makeDeploy(ns, name, gen, observed, replicas, updated, available, createdAgo)
+	if len(matchLabels) > 0 {
+		ml := make(map[string]interface{}, len(matchLabels))
+		for k, v := range matchLabels {
+			ml[k] = v
+		}
+		_ = unstructured.SetNestedMap(u.Object, ml, "spec", "selector", "matchLabels")
+	}
+	return u
+}
+
 // makeReplicaSet builds an RS owned by a Deployment.
 func makeReplicaSet(ns, name, ownerDeploy string) unstructured.Unstructured {
 	u := unstructured.Unstructured{}
@@ -195,6 +210,48 @@ func TestConfigDrift_DeployRolloutStuck_Warning(t *testing.T) {
 	}
 	if !strings.Contains(got[0].Message, "rollout stuck") {
 		t.Errorf("message lacks 'rollout stuck': %s", got[0].Message)
+	}
+}
+
+func TestConfigDrift_DeployRolloutStuck_RemediationSubstitutesSelector(t *testing.T) {
+	// Operators reading the rollout-stuck remediation had no way to use
+	// the suggested `kubectl get pods -l <selector>` — they had to
+	// inspect the Deployment manually first. CHA already has the
+	// Deployment in hand; substitute spec.selector.matchLabels into the
+	// remediation so it's directly copy-pasteable.
+	src := &memSourceCfg{byResource: map[string][]unstructured.Unstructured{
+		"deployments": {
+			makeDeployWithSelector("app", "x", 7, 7, 3, 1, 1, time.Hour,
+				map[string]string{"app": "x", "tier": "frontend"}),
+		},
+	}}
+	got := ConfigDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d: %+v", len(got), got)
+	}
+	rem := got[0].Remediation
+	if strings.Contains(rem, "<selector>") {
+		t.Errorf("remediation must not contain literal <selector>; got: %s", rem)
+	}
+	// Order-independent: both label k=v pairs must appear in the rendered selector.
+	if !strings.Contains(rem, "app=x") || !strings.Contains(rem, "tier=frontend") {
+		t.Errorf("remediation should embed Deployment's matchLabels; got: %s", rem)
+	}
+}
+
+func TestConfigDrift_DeployRolloutStuck_NoSelector_NoPlaceholderLeak(t *testing.T) {
+	// Deployment without spec.selector.matchLabels (rare — most workloads
+	// declare it). The remediation must still avoid leaking the literal
+	// `<selector>` token; we fall back to a generic phrasing.
+	src := &memSourceCfg{byResource: map[string][]unstructured.Unstructured{
+		"deployments": {makeDeploy("app", "x", 7, 7, 3, 1, 1, time.Hour)},
+	}}
+	got := ConfigDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 diagnostic; got %d", len(got))
+	}
+	if strings.Contains(got[0].Remediation, "<selector>") {
+		t.Errorf("remediation must not contain literal <selector>; got: %s", got[0].Remediation)
 	}
 }
 
