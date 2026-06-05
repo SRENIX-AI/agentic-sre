@@ -107,19 +107,6 @@ func FormatAlertsPayload(fixedIssues []DeltaDiag, fixResults []fix.Result) Slack
 // per-finding footer text always fits.
 const maxSlackAttachmentChars = 35000
 
-// SplitCriticalPayloads renders the unfixable/resolved set into one or
-// more SlackPayloads, chunking findings so each payload's attachment
-// text stays under maxSlackAttachmentChars.
-//
-// Without this, posts with >40K rendered chars (≈ 40 digest-pin findings)
-// were silently truncated by Slack — alphabetically-late findings + their
-// "✅ Approve" links never reached the channel even though the OSS render
-// included them correctly. (Discovered 2026-06-04 with a 115K render.)
-//
-// The first chunk carries the "*CHA Alert — Human Action Required*"
-// header and any critical findings; subsequent chunks add a "(part N/M)"
-// indicator and continue with diagnostics. Resolved findings stay in the
-// last chunk (they're typically small).
 // CriticalRenderConfig is the typed knob bag for SplitCriticalPayloadsConfig.
 // Zero value = identical to legacy SplitCriticalPayloads behaviour, so
 // every existing caller is byte-equivalent.
@@ -136,6 +123,14 @@ type CriticalRenderConfig struct {
 // SplitCriticalPayloads is the legacy entry point. Renders the same as
 // SplitCriticalPayloadsConfig with a zero CriticalRenderConfig. Kept so
 // existing callers compile + behave identically.
+//
+// Without the chunker, posts with >40K rendered chars (≈ 40 digest-pin
+// findings) were silently truncated by Slack — alphabetically-late
+// findings + their "✅ Approve" links never reached the channel even
+// though the OSS render included them correctly. The chunker carries
+// the "*CHA Alert — Human Action Required*" header on every chunk and
+// adds a "(part N/M)" indicator when more than one chunk results.
+// Resolved findings stay in the last chunk (they're typically small).
 func SplitCriticalPayloads(unfixable []DeltaDiag, resolved []ResolvedDiag) []SlackPayload {
 	return SplitCriticalPayloadsConfig(unfixable, resolved, CriticalRenderConfig{})
 }
