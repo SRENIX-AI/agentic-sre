@@ -6,6 +6,8 @@ package diagnose
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
@@ -227,8 +229,7 @@ func (c ConfigDrift) checkDeploymentRollouts(ctx context.Context, src snapshot.S
 				Message: fmt.Sprintf(
 					"Deployment %s/%s rollout stuck for >%s: updatedReplicas=%d/%d, availableReplicas=%d",
 					ns, name, grace, updated, replicas, available),
-				Remediation: "The new revision's pods aren't going Ready. Check `kubectl describe deploy " + name + " -n " + ns + "` for the Progressing condition reason, " +
-					"and `kubectl -n " + ns + " get pods -l <selector>` for individual pod events (typically ImagePullBackOff, readiness-probe failure, or insufficient cluster capacity).",
+				Remediation: renderRolloutStuckRemediation(d, ns, name),
 			})
 		}
 	}
@@ -325,6 +326,36 @@ func (c ConfigDrift) checkConfigChecksumDrift(ctx context.Context, src snapshot.
 		})
 	}
 	return out
+}
+
+// renderRolloutStuckRemediation renders the per-pod kubectl flag using
+// the Deployment's actual spec.selector.matchLabels rather than the
+// literal `<selector>` placeholder. Operators can copy-paste the line
+// directly; the AI tier surfacing this diagnostic also has a concrete
+// command to execute via the kubectl proposer instead of a template.
+//
+// Falls back to a generic "kubectl get pods -n <ns>" hint when the
+// Deployment has no matchLabels (rare — most workloads declare them).
+func renderRolloutStuckRemediation(d *unstructured.Unstructured, ns, name string) string {
+	labels, found, _ := unstructured.NestedStringMap(d.Object, "spec", "selector", "matchLabels")
+	prefix := "The new revision's pods aren't going Ready. Check `kubectl describe deploy " + name + " -n " + ns + "` for the Progressing condition reason, "
+	suffix := " for individual pod events (typically ImagePullBackOff, readiness-probe failure, or insufficient cluster capacity)."
+	if !found || len(labels) == 0 {
+		return prefix + "and `kubectl -n " + ns + " get pods` (Deployment has no spec.selector.matchLabels to filter by)" + suffix
+	}
+	// Sort keys so the rendered selector is stable across cycles — both
+	// for diagnostic deduplication and for snapshot-based tests.
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+labels[k])
+	}
+	sel := strings.Join(parts, ",")
+	return prefix + "and `kubectl -n " + ns + " get pods -l " + sel + "`" + suffix
 }
 
 // deploymentMutatedAt returns the timestamp of the latest spec change
