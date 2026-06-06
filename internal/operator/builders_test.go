@@ -201,6 +201,128 @@ func TestBuildWatcherDeployment_NoApprovalSignerNoFlags(t *testing.T) {
 	}
 }
 
+// --- Ticketing (Phase 1.D — operator-managed CR field → flags + env) ---
+//
+// Before this work, `spec.ticketing` was helm-values-only and never
+// reached the operator-managed watcher Deployment. Operators who set
+// helm values saw no effect; only the chart-managed watcher honored
+// them. Now the CR carries a typed TicketingSpec, the operator emits
+// the matching --ticketing-* flags + the optional MCP-key env var,
+// and the integration is end-to-end declarative.
+
+func TestBuildWatcherDeployment_TicketingArgsOpenProject(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	cr.Spec.Ticketing = &chav1alpha1.TicketingSpec{
+		Enabled:        true,
+		Provider:       "openproject",
+		Cluster:        "bionic",
+		MCPURL:         "http://mcp-openproject-server.mcp.svc:8006/mcp",
+		Project:        "6",
+		TypeID:         "36",
+		ClosedStatusID: "82",
+		WebURLPrefix:   "https://op.zippio.ai",
+		SeverityPriority: &chav1alpha1.TicketingPrioritySpec{
+			Critical: "75",
+			Warning:  "74",
+			Info:     "73",
+		},
+		Labels: []string{"cha", "auto-filed"},
+		DryRun: true,
+	}
+	d := BuildWatcherDeployment(cr)
+	if d == nil {
+		t.Fatal("watcher deploy must build")
+	}
+	args := d.Spec.Template.Spec.Containers[0].Args
+	mustContain(t, args, "--ticketing-provider=openproject")
+	mustContain(t, args, "--ticketing-mcp-url=http://mcp-openproject-server.mcp.svc:8006/mcp")
+	mustContain(t, args, "--ticketing-project=6")
+	mustContain(t, args, "--ticketing-type-id=36")
+	mustContain(t, args, "--ticketing-closed-status-id=82")
+	mustContain(t, args, "--ticketing-priority-critical=75")
+	mustContain(t, args, "--ticketing-priority-warning=74")
+	mustContain(t, args, "--ticketing-priority-info=73")
+	mustContain(t, args, "--ticketing-web-url-prefix=https://op.zippio.ai")
+	// Labels are passed once per label (the underlying flag is StringSlice).
+	mustContain(t, args, "--ticketing-labels=cha")
+	mustContain(t, args, "--ticketing-labels=auto-filed")
+	// dryRun = true → flag emitted (the absence-by-default means a bool flag with no value).
+	mustContain(t, args, "--ticketing-dry-run")
+}
+
+func TestBuildWatcherDeployment_TicketingDisabled_NoFlags(t *testing.T) {
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	cr.Spec.Ticketing = &chav1alpha1.TicketingSpec{
+		Enabled:  false, // master switch off
+		Provider: "openproject",
+		Project:  "6",
+	}
+	d := BuildWatcherDeployment(cr)
+	args := d.Spec.Template.Spec.Containers[0].Args
+	for _, a := range args {
+		if len(a) >= 12 && a[:12] == "--ticketing-" {
+			t.Errorf("disabled ticketing must not emit any --ticketing-* flag; got %q", a)
+		}
+	}
+}
+
+func TestBuildWatcherDeployment_TicketingNoSpec_NoFlags(t *testing.T) {
+	// Absence of spec.ticketing entirely (most CRs) must be a no-op.
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	cr.Spec.Ticketing = nil
+	d := BuildWatcherDeployment(cr)
+	args := d.Spec.Template.Spec.Containers[0].Args
+	for _, a := range args {
+		if len(a) >= 12 && a[:12] == "--ticketing-" {
+			t.Errorf("nil ticketing must not emit any --ticketing-* flag; got %q", a)
+		}
+	}
+}
+
+func TestBuildWatcherDeployment_TicketingAuthEnv(t *testing.T) {
+	// When Auth.Enabled + SecretName is set, the watcher container gets
+	// the TICKETING_MCP_API_KEY env var via secretKeyRef. The cha binary
+	// reads that env at startup; the flag layer is unchanged.
+	cr := sampleCR()
+	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
+	cr.Spec.Ticketing = &chav1alpha1.TicketingSpec{
+		Enabled:  true,
+		Provider: "openproject",
+		MCPURL:   "https://mcp.example.com/openproject",
+		Project:  "6",
+		TypeID:   "36",
+		Auth: &chav1alpha1.TicketingAuthSpec{
+			Enabled:    true,
+			SecretName: "cha-ticketing-mcp",
+			SecretKey:  "api-key",
+		},
+	}
+	d := BuildWatcherDeployment(cr)
+	env := d.Spec.Template.Spec.Containers[0].Env
+	found := false
+	for _, e := range env {
+		if e.Name == "TICKETING_MCP_API_KEY" {
+			found = true
+			if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
+				t.Errorf("TICKETING_MCP_API_KEY must use secretKeyRef, not literal value")
+				break
+			}
+			if e.ValueFrom.SecretKeyRef.Name != "cha-ticketing-mcp" {
+				t.Errorf("secretKeyRef.Name = %q, want cha-ticketing-mcp", e.ValueFrom.SecretKeyRef.Name)
+			}
+			if e.ValueFrom.SecretKeyRef.Key != "api-key" {
+				t.Errorf("secretKeyRef.Key = %q, want api-key", e.ValueFrom.SecretKeyRef.Key)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected TICKETING_MCP_API_KEY env var; got %+v", env)
+	}
+}
+
 // --- Diagnose CronJob ---
 
 func TestBuildDiagnoseCronJob_DisabledReturnsNil(t *testing.T) {

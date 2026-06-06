@@ -112,6 +112,10 @@ func (in *ClusterHealthAutopilotSpec) DeepCopyInto(out *ClusterHealthAutopilotSp
 		out.ExternalDNS = new(ExternalDNSSpec)
 		in.ExternalDNS.DeepCopyInto(out.ExternalDNS)
 	}
+	if in.Ticketing != nil {
+		out.Ticketing = new(TicketingSpec)
+		in.Ticketing.DeepCopyInto(out.Ticketing)
+	}
 }
 
 // DeepCopy returns a deep copy of the receiver.
@@ -548,6 +552,69 @@ func (in *SilenceStatus) DeepCopy() *SilenceStatus {
 		return nil
 	}
 	out := new(SilenceStatus)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- TicketingSpec ---
+
+// DeepCopyInto copies the receiver into out. in must be non-nil.
+func (in *TicketingSpec) DeepCopyInto(out *TicketingSpec) {
+	*out = *in
+	if in.SeverityPriority != nil {
+		out.SeverityPriority = new(TicketingPrioritySpec)
+		*out.SeverityPriority = *in.SeverityPriority
+	}
+	if in.Labels != nil {
+		out.Labels = make([]string, len(in.Labels))
+		copy(out.Labels, in.Labels)
+	}
+	if in.Auth != nil {
+		out.Auth = new(TicketingAuthSpec)
+		*out.Auth = *in.Auth
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *TicketingSpec) DeepCopy() *TicketingSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(TicketingSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- TicketingPrioritySpec ---
+
+// DeepCopyInto copies the receiver into out. All fields are scalar.
+func (in *TicketingPrioritySpec) DeepCopyInto(out *TicketingPrioritySpec) {
+	*out = *in
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *TicketingPrioritySpec) DeepCopy() *TicketingPrioritySpec {
+	if in == nil {
+		return nil
+	}
+	out := new(TicketingPrioritySpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// --- TicketingAuthSpec ---
+
+// DeepCopyInto copies the receiver into out. All fields are scalar.
+func (in *TicketingAuthSpec) DeepCopyInto(out *TicketingAuthSpec) {
+	*out = *in
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *TicketingAuthSpec) DeepCopy() *TicketingAuthSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(TicketingAuthSpec)
 	in.DeepCopyInto(out)
 	return out
 }

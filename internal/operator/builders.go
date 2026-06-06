@@ -206,6 +206,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 		"--resync-period=" + resync,
 	}
 	args = append(args, alertingArgs(cr.Spec.Alerting, false)...)
+	args = append(args, ticketingArgs(cr.Spec.Ticketing)...)
 
 	env := []corev1.EnvVar{
 		{
@@ -222,6 +223,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 		},
 	}
 	env = append(env, alertingEnv(cr.Spec.Alerting)...)
+	env = append(env, ticketingEnv(cr.Spec.Ticketing)...)
 
 	// v1.16.0 — When the CR's AI tier has approvalServerUrl set, hand
 	// it to the watcher so the OSS binary itself can mint signed
@@ -445,6 +447,67 @@ func alertingEnv(a *chav1alpha1.AlertingSpec) []corev1.EnvVar {
 		env = append(env, secretRefEnv("SLACK_HEALTHINFO_URL", c.SecretName, defaultSlackSecretKey, c.SecretKey))
 	}
 	return env
+}
+
+// ticketingArgs renders the watcher CLI flags from spec.ticketing.
+// nil OR disabled = no flags (byte-identical to pre-1.D installs).
+// Empty values are skipped so the operator never emits flag=<empty>,
+// which would mask a missing OP ID as a real CLI value.
+func ticketingArgs(t *chav1alpha1.TicketingSpec) []string {
+	if t == nil || !t.Enabled {
+		return nil
+	}
+	var out []string
+	if t.Provider != "" {
+		out = append(out, "--ticketing-provider="+t.Provider)
+	}
+	if t.MCPURL != "" {
+		out = append(out, "--ticketing-mcp-url="+t.MCPURL)
+	}
+	if t.Project != "" {
+		out = append(out, "--ticketing-project="+t.Project)
+	}
+	if t.TypeID != "" {
+		out = append(out, "--ticketing-type-id="+t.TypeID)
+	}
+	if t.ClosedStatusID != "" {
+		out = append(out, "--ticketing-closed-status-id="+t.ClosedStatusID)
+	}
+	if t.SeverityPriority != nil {
+		if t.SeverityPriority.Critical != "" {
+			out = append(out, "--ticketing-priority-critical="+t.SeverityPriority.Critical)
+		}
+		if t.SeverityPriority.Warning != "" {
+			out = append(out, "--ticketing-priority-warning="+t.SeverityPriority.Warning)
+		}
+		if t.SeverityPriority.Info != "" {
+			out = append(out, "--ticketing-priority-info="+t.SeverityPriority.Info)
+		}
+	}
+	if t.WebURLPrefix != "" {
+		out = append(out, "--ticketing-web-url-prefix="+t.WebURLPrefix)
+	}
+	for _, l := range t.Labels {
+		if l != "" {
+			out = append(out, "--ticketing-labels="+l)
+		}
+	}
+	if t.DryRun {
+		out = append(out, "--ticketing-dry-run")
+	}
+	return out
+}
+
+// ticketingEnv wires the optional MCP API key via secretKeyRef. Empty
+// when Auth is nil / disabled / missing SecretName — matches the
+// in-cluster-traffic default where no key is needed.
+func ticketingEnv(t *chav1alpha1.TicketingSpec) []corev1.EnvVar {
+	if t == nil || !t.Enabled || t.Auth == nil || !t.Auth.Enabled || t.Auth.SecretName == "" {
+		return nil
+	}
+	return []corev1.EnvVar{
+		secretRefEnv("TICKETING_MCP_API_KEY", t.Auth.SecretName, "api-key", t.Auth.SecretKey),
+	}
 }
 
 func secretRefEnv(name, secretName, defaultKey, overrideKey string) corev1.EnvVar {
