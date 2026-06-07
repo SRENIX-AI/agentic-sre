@@ -13,6 +13,27 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.20.0] — 2026-06-07
+
+### Added — Operator-managed `spec.ticketing` (Phase 1.D, PR #167)
+
+Closes the Helm-values-vs-operator-managed-CR gap for issue-tracker delivery. Before this release, the chart had full `ticketing.*` Helm values + the `cmd/cha` flags + the `pkg/ticketing/openproject.Sink` implementation, but the operator's `BuildWatcherDeployment` never emitted any `--ticketing-*` flag and the CRD had no `spec.ticketing` field. Operators who set Helm values saw no effect on operator-managed installs.
+
+New `spec.ticketing` (TicketingSpec) on the CR drives flags + env injection:
+
+  - `--ticketing-provider` ← `spec.ticketing.provider` (openproject / jira / servicenow enum)
+  - `--ticketing-mcp-url` ← `spec.ticketing.mcpURL`
+  - `--ticketing-project` / `--ticketing-type-id` / `--ticketing-closed-status-id` ← matching CR fields
+  - `--ticketing-priority-{critical,warning,info}` ← `spec.ticketing.severityPriority.*`
+  - `--ticketing-web-url-prefix` ← `spec.ticketing.webURLPrefix`
+  - `--ticketing-labels=<L>` (one flag per label) ← `spec.ticketing.labels[]`
+  - `--ticketing-dry-run` ← `spec.ticketing.dryRun: true`
+  - `TICKETING_MCP_API_KEY` env via secretKeyRef ← `spec.ticketing.auth.{secretName,secretKey}` (only when `auth.enabled`)
+
+Schema is OpenProject-shaped (OSS's only supported provider); the enum allows jira/servicenow so CHA-com can add them additively without a v1alpha2 bump.
+
+Disabled (the default) emits zero flags so existing CRs stay byte-identical.
+
 ## [1.19.0] — 2026-06-05
 
 ### Added — Per-cycle delta render: "🆕 New this cycle" + stable-collapse + opt-in no-change digest (PR #165)
