@@ -84,28 +84,42 @@ spec:
             {{- end }}
             {{- end }}
             {{- if .Values.ticketing.enabled }}
-            {{- $pcfg := index .Values.ticketing (.Values.ticketing.provider) }}
+            {{- /* v1.20.0: chart values flattened to mirror CRD's spec.ticketing.* shape so YAML moves freely between Helm and CR. Legacy nested form (ticketing.openproject.*) is a fallback when matching flat field is empty. Nested form removed in next major. */}}
+            {{- $t := .Values.ticketing }}
+            {{- $providerKey := default "openproject" $t.provider }}
+            {{- $p := dict }}
+            {{- if hasKey $t $providerKey }}
+              {{- $p = index $t $providerKey }}
+            {{- end }}
             - --ticketing-provider={{ .Values.ticketing.provider }}
-            - --ticketing-mcp-url={{ $pcfg.mcpURL }}
-            {{- with $pcfg.projectID }}
+            {{- $mcpURL := $t.mcpURL | default (get $p "mcpURL") }}
+            {{- with $mcpURL }}
+            - --ticketing-mcp-url={{ . }}
+            {{- end }}
+            {{- $project := $t.project | default (get $p "projectID") | default (get $p "project") }}
+            {{- with $project }}
             - --ticketing-project={{ . }}
             {{- end }}
-            {{- with $pcfg.typeID }}
+            {{- $typeID := $t.typeID | default (get $p "typeID") }}
+            {{- with $typeID }}
             - --ticketing-type-id={{ . }}
             {{- end }}
-            {{- with $pcfg.closedStatusID }}
+            {{- $closedStatusID := $t.closedStatusID | default (get $p "closedStatusID") }}
+            {{- with $closedStatusID }}
             - --ticketing-closed-status-id={{ . }}
             {{- end }}
-            {{- with $pcfg.severityPriority.critical }}
+            {{- $sp := $t.severityPriority | default (get $p "severityPriority") | default (dict) }}
+            {{- with $sp.critical }}
             - --ticketing-priority-critical={{ . }}
             {{- end }}
-            {{- with $pcfg.severityPriority.warning }}
+            {{- with $sp.warning }}
             - --ticketing-priority-warning={{ . }}
             {{- end }}
-            {{- with $pcfg.severityPriority.info }}
+            {{- with $sp.info }}
             - --ticketing-priority-info={{ . }}
             {{- end }}
-            {{- with $pcfg.webURLPrefix }}
+            {{- $webURLPrefix := $t.webURLPrefix | default (get $p "webURLPrefix") }}
+            {{- with $webURLPrefix }}
             - --ticketing-web-url-prefix={{ . }}
             {{- end }}
             {{- range .Values.ticketing.labels }}
