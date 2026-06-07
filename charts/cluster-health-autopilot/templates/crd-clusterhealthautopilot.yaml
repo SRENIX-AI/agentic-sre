@@ -384,6 +384,55 @@ spec:
                           type: array
                           items:
                             type: string
+                ticketing:
+                  # TicketingSpec — Phase 1.D. Operator-managed wiring
+                  # for the issue-tracker sink (OpenProject in OSS;
+                  # Jira / ServiceNow in CHA-com). Set Enabled=true and
+                  # the operator passes the matching --ticketing-*
+                  # flags to the watcher container.
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    provider:
+                      type: string
+                      enum: [openproject, jira, servicenow]
+                    cluster:
+                      type: string
+                    mcpURL:
+                      type: string
+                    project:
+                      type: string
+                    typeID:
+                      type: string
+                    closedStatusID:
+                      type: string
+                    webURLPrefix:
+                      type: string
+                    severityPriority:
+                      type: object
+                      properties:
+                        critical:
+                          type: string
+                        warning:
+                          type: string
+                        info:
+                          type: string
+                    labels:
+                      type: array
+                      items:
+                        type: string
+                    dryRun:
+                      type: boolean
+                    auth:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        secretName:
+                          type: string
+                        secretKey:
+                          type: string
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

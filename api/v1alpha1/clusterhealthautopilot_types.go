@@ -25,10 +25,11 @@ import (
 // until the Phase 2 reconciler picks them up. Ship the schema now so
 // operator-managed manifests are forward-compatible.
 //
-// TicketingSpec is intentionally not yet in v1alpha1 — its shape is
-// provider-specific (OpenProject / Jira / ServiceNow) and the typed
-// schema lands when ticketing also moves off helm values in Phase 2.
-// See `docs/design/2026-05-v1.9-operator-phase-1c.md` for the roadmap.
+// Phase 1.D: `TicketingSpec` now lives here so operator-managed CRs can
+// drive issue-tracker delivery declaratively. The shape is intentionally
+// OpenProject-shaped at v1alpha1 (OSS's only supported provider);
+// Jira / ServiceNow knobs land in CHA-com via additive optional fields
+// when those providers ship.
 type ClusterHealthAutopilotSpec struct {
 	// Image is the container image the watcher + cronjobs run.
 	// Required. Operators typically pin a semver tag; the controller
@@ -89,6 +90,14 @@ type ClusterHealthAutopilotSpec struct {
 	// v1.10; the analyzer reads it at registration time.
 	// +optional
 	ExternalDNS *ExternalDNSSpec `json:"externalDNS,omitempty"`
+
+	// Ticketing wires the issue-tracker sink (OpenProject in OSS;
+	// Jira / ServiceNow in CHA-com). When nil OR `Enabled` is false the
+	// watcher behaves byte-identical to pre-1.D installs (no
+	// `--ticketing-*` flags emitted). Set to enable per-finding
+	// work-package creation + resolve-on-clear.
+	// +optional
+	Ticketing *TicketingSpec `json:"ticketing,omitempty"`
 
 	// ServiceAccountName overrides the controller-managed SA name.
 	// When empty the controller creates `<cr-name>-sa` AND provisions a
@@ -757,4 +766,109 @@ type CloudflareSecretRef struct {
 	// Key is the key inside the Secret. Defaults to "token".
 	// +optional
 	Key string `json:"key,omitempty"`
+}
+
+// TicketingSpec controls the issue-tracker sink the watcher drives
+// each cycle. When Enabled is true the operator passes the matching
+// `--ticketing-*` flags to the watcher container.
+//
+// Provider-shape note: v1alpha1 is OpenProject-shaped (OSS's only
+// supported provider). Jira / ServiceNow knobs land in CHA-com when
+// those providers ship, as additive optional fields on this spec.
+type TicketingSpec struct {
+	// Enabled is the master switch. nil OR false → no `--ticketing-*`
+	// flags are emitted (byte-identical to pre-1.D installs).
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Provider names the issue-tracker. OSS supports `openproject`;
+	// CHA-com adds `jira` / `servicenow`. Required when Enabled.
+	// +kubebuilder:validation:Enum=openproject;jira;servicenow
+	// +optional
+	Provider string `json:"provider,omitempty"`
+
+	// Cluster identifies this cluster in ticket bodies (e.g. "bionic").
+	// Mirrors alerting.alertmanager.clusterName; defaults to "cluster"
+	// when empty.
+	// +optional
+	Cluster string `json:"cluster,omitempty"`
+
+	// MCPURL is the issue-tracker MCP server endpoint
+	// (Streamable-HTTP transport). Required when Enabled. In-cluster
+	// default: http://mcp-openproject-server.mcp.svc:8006/mcp
+	// +optional
+	MCPURL string `json:"mcpURL,omitempty"`
+
+	// Project is the OpenProject project ID (numeric string;
+	// discoverable via the MCP server's list_projects tool).
+	// +optional
+	Project string `json:"project,omitempty"`
+
+	// TypeID is the work-package type ID (e.g. "36" for Task).
+	// Required when Enabled — most installs use Task.
+	// +optional
+	TypeID string `json:"typeID,omitempty"`
+
+	// ClosedStatusID is the status ID applied when a finding
+	// auto-resolves (e.g. "82" for Closed). Needed for resolve-on-clear.
+	// +optional
+	ClosedStatusID string `json:"closedStatusID,omitempty"`
+
+	// WebURLPrefix is the OpenProject web UI base URL (e.g.
+	// `https://op.example.com`). Used to render operator-clickable
+	// TicketRef.URL on the persisted DriftReport CRs.
+	// +optional
+	WebURLPrefix string `json:"webURLPrefix,omitempty"`
+
+	// SeverityPriority maps CHA severities → provider priority IDs.
+	// Empty values let the provider use its project default.
+	// +optional
+	SeverityPriority *TicketingPrioritySpec `json:"severityPriority,omitempty"`
+
+	// Labels are appended to every ticket body for filtering.
+	// Defaults to ["cha", "auto-filed"] in the chart; the operator
+	// passes whatever this slice contains, including empty.
+	// +optional
+	Labels []string `json:"labels,omitempty"`
+
+	// DryRun=true makes the watcher LOG intended ticket operations
+	// without calling the MCP server. Useful for a first deployment.
+	// +optional
+	DryRun bool `json:"dryRun,omitempty"`
+
+	// Auth optionally configures an MCP API key (typically used when
+	// the MCP server is fronted by Kong key-auth). Leave nil for
+	// in-cluster HTTP traffic.
+	// +optional
+	Auth *TicketingAuthSpec `json:"auth,omitempty"`
+}
+
+// TicketingPrioritySpec maps CHA severities to provider priority IDs.
+type TicketingPrioritySpec struct {
+	// Critical priority ID (e.g. "75" for OpenProject Immediate).
+	// +optional
+	Critical string `json:"critical,omitempty"`
+	// Warning priority ID (e.g. "74" for OpenProject High).
+	// +optional
+	Warning string `json:"warning,omitempty"`
+	// Info priority ID (e.g. "73" for OpenProject Normal).
+	// +optional
+	Info string `json:"info,omitempty"`
+}
+
+// TicketingAuthSpec configures an MCP API key for the ticketing sink.
+type TicketingAuthSpec struct {
+	// Enabled gates whether the operator wires the TICKETING_MCP_API_KEY
+	// env var. False = no env var (default; matches in-cluster traffic).
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// SecretName is the K8s Secret holding the API key. Required when
+	// Enabled — typically populated by ESO from Vault.
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
+
+	// SecretKey is the key inside the Secret. Defaults to "api-key".
+	// +optional
+	SecretKey string `json:"secretKey,omitempty"`
 }
