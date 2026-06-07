@@ -267,25 +267,28 @@ ticketing:
   labels:                                # merged into every ticket
     - cha
     - auto-filed
-  openproject:
-    # MCP endpoint speaking Streamable-HTTP (single POST endpoint).
-    # In-cluster default — bypasses Kong, no API key required.
-    mcpURL: "http://mcp-openproject-server.mcp.svc:8006/mcp"
-    # All ID fields below are numeric strings matching what the MCP
-    # server's list_projects / list_types / list_priorities /
-    # list_statuses tools return. Discover with:
-    #   curl -fsSL -X POST $MCP_URL -H 'Content-Type: application/json' \
-    #     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}'
-    projectID: ""                        # e.g. "6" for the Demo project
-    typeID: ""                           # e.g. "36" for Task — REQUIRED
-    closedStatusID: ""                   # e.g. "82" for Closed status — needed for resolve-on-clear (M2)
-    webURLPrefix: ""                     # e.g. "https://op.bionicaisolutions.com" — used to build operator-clickable URLs
-    # Map CHA severities → OpenProject priority IDs. Empty values let
-    # OpenProject use the project default priority for that severity.
-    severityPriority:
-      critical: ""                       # e.g. "75" for Immediate
-      warning:  ""                       # e.g. "74" for High
-      info:     ""                       # e.g. "73" for Normal
+  # FLAT shape — matches the operator CRD's `spec.ticketing.*` so YAML
+  # can move between Helm values and `kubectl patch cha …` without
+  # reshaping. The legacy nested `ticketing.openproject.*` block below
+  # is the v1.19.x shape and is honored by the chart template as a
+  # fallback ONLY when the matching flat field is empty/unset.
+  # The nested form will be removed in the next major chart bump.
+  #
+  # All ID fields are numeric strings matching what the MCP server's
+  # list_projects / list_types / list_priorities / list_statuses
+  # tools return. Discover with:
+  #   curl -fsSL -X POST $MCP_URL -H 'Content-Type: application/json' \
+  #     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}'
+  mcpURL: "http://mcp-openproject-server.mcp.svc:8006/mcp"
+  project: ""                            # e.g. "6" for the Demo project
+  typeID: ""                             # e.g. "36" for Task — REQUIRED
+  closedStatusID: ""                     # e.g. "82" for Closed status — needed for resolve-on-clear
+  webURLPrefix: ""                       # e.g. "https://op.example.com" — used to build operator-clickable URLs
+  severityPriority:
+    critical: ""                         # e.g. "75" for Immediate
+    warning:  ""                         # e.g. "74" for High
+    info:     ""                         # e.g. "73" for Normal
+  dryRun: false                          # Log intended ops without calling the MCP server
   # Optional API key when talking to the MCP server through Kong
   # (provider URL on mcp.baisoln.com). For in-cluster traffic leave
   # auth.enabled=false. When enabled, the secret is expected to be
@@ -294,7 +297,11 @@ ticketing:
     enabled: false
     secretName: cha-ticketing-mcp        # K8s Secret with the API key
     secretKey: api-key                   # Key inside the Secret
-  dryRun: false                          # Log intended ops without calling the MCP server
+  # DEPRECATED (v1.20.0+): nested per-provider sub-trees. Honored only
+  # when the equivalent flat field above is unset. New installs should
+  # use the flat shape exclusively. Will be removed in the next major
+  # chart bump.
+  openproject: {}
 
 # Watcher — event-driven, long-running Deployment (Phase 1).
 # Replaces polling latency (CronJob tick) with near-instant reaction to
