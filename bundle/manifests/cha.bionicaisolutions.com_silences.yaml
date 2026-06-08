@@ -81,6 +81,12 @@ spec:
                     severity:
                       type: string
                       enum: ["warning", "critical"]
+                    messagePattern:
+                      # v1.21.0 (Phase 2.B.9) — class-scoped silence
+                      # via substring match on Diagnostic.Message.
+                      type: string
+                      minLength: 1
+                      maxLength: 256
                 until:
                   type: string
                   format: date-time

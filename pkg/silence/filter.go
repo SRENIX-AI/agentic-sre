@@ -17,6 +17,7 @@
 package silence
 
 import (
+	"strings"
 	"time"
 
 	chav1alpha1 "github.com/Bionic-AI-Solutions/cluster-health-autopilot/api/v1alpha1"
@@ -40,7 +41,7 @@ func Matches(s chav1alpha1.Silence, d diagnose.Diagnostic, now time.Time) bool {
 	m := s.Spec.Matcher
 	// Empty matcher → no-op safety. The CRD validation should also
 	// reject this, but defending the filter is cheap.
-	if m.Source == "" && m.Subject == "" && m.Severity == "" {
+	if m.Source == "" && m.Subject == "" && m.Severity == "" && m.MessagePattern == "" {
 		return false
 	}
 
@@ -51,6 +52,10 @@ func Matches(s chav1alpha1.Silence, d diagnose.Diagnostic, now time.Time) bool {
 		return false
 	}
 	if m.Severity != "" && m.Severity != d.Severity {
+		return false
+	}
+	// Phase 2.B.9 — class-scoped silence via MessagePattern substring.
+	if m.MessagePattern != "" && !strings.Contains(d.Message, m.MessagePattern) {
 		return false
 	}
 	return true
