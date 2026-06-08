@@ -21,7 +21,10 @@ metadata:
     {{- include "cha.labels" . | nindent 4 }}
     cha.bionicaisolutions.com/role: aiwatch
 spec:
-  replicas: 1
+  # Phase 2.F — when ai.replicas > 1, the watcher uses leader-election
+  # so exactly one runs tick() at a time. Default 1 (single-replica
+  # noop path; byte-identical to pre-2.F deploys).
+  replicas: {{ .Values.ai.replicas | default 1 }}
   selector:
     matchLabels:
       {{- include "cha.selectorLabels" . | nindent 6 }}
@@ -65,6 +68,12 @@ spec:
           imagePullPolicy: {{ (.Values.ai.image).pullPolicy | default "IfNotPresent" }}
           args:
             {{- include "cha.aiArgs" . | nindent 12 }}
+          {{- if (.Values.ai.metrics).addr }}
+          ports:
+            - name: metrics
+              containerPort: {{ (.Values.ai.metrics).port | default 9090 }}
+              protocol: TCP
+          {{- end }}
           env:
             - name: MY_POD_NAMESPACE
               valueFrom:

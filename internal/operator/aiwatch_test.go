@@ -594,3 +594,54 @@ func TestBuildAIWatchDeployment_ExtraArgsEmpty_NoChange(t *testing.T) {
 	args := d.Spec.Template.Spec.Containers[0].Args
 	mustContain(t, args, "--ai-tier=t0")
 }
+
+// ----- Phase 2.F.6: spec.ai.replicas + leader-election args ------------
+
+func TestBuildAIWatchDeployment_ReplicasDefault1NoLeaderElection(t *testing.T) {
+	cr := aiCR()
+	d := BuildAIWatchDeployment(cr)
+	if d == nil {
+		t.Fatal("expected non-nil deployment")
+	}
+	if d.Spec.Replicas == nil || *d.Spec.Replicas != 1 {
+		t.Errorf("default replicas should be 1; got %v", d.Spec.Replicas)
+	}
+	args := d.Spec.Template.Spec.Containers[0].Args
+	for _, a := range args {
+		if strings.Contains(a, "--leader-election") {
+			t.Errorf("default deploy should NOT carry --leader-election; got %q", a)
+		}
+	}
+}
+
+func TestBuildAIWatchDeployment_ReplicasMoreThan1AddsLeaderElectionArgs(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.Replicas = 2
+	d := BuildAIWatchDeployment(cr)
+	if d == nil {
+		t.Fatal("expected non-nil deployment")
+	}
+	if d.Spec.Replicas == nil || *d.Spec.Replicas != 2 {
+		t.Errorf("replicas: got %v want 2", d.Spec.Replicas)
+	}
+	args := strings.Join(d.Spec.Template.Spec.Containers[0].Args, " ")
+	wants := []string{
+		"--leader-election=true",
+		"--leader-election-namespace=" + cr.Namespace,
+		"--leader-election-name=" + cr.Name + "-aiwatch-leader",
+	}
+	for _, w := range wants {
+		if !strings.Contains(args, w) {
+			t.Errorf("missing arg %q; have: %s", w, args)
+		}
+	}
+}
+
+func TestBuildAIWatchDeployment_ReplicasPropagatesArbitraryValue(t *testing.T) {
+	cr := aiCR()
+	cr.Spec.AI.Replicas = 3
+	d := BuildAIWatchDeployment(cr)
+	if d == nil || d.Spec.Replicas == nil || *d.Spec.Replicas != 3 {
+		t.Errorf("Replicas=3 should propagate; got %v", d.Spec.Replicas)
+	}
+}

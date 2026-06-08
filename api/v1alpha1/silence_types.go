@@ -72,6 +72,20 @@ type SilenceMatcher struct {
 	// Empty = any severity.
 	// +optional
 	Severity string `json:"severity,omitempty"`
+
+	// MessagePattern narrows by Message substring. v1.21.0
+	// (Phase 2.B.9) — supports class-scoped silences derived from
+	// a "Silence class (7d)" click on a Slack proposal. The CHA-com
+	// approval-server's /silence-class handler creates Silences
+	// with this field populated from policy.InferMessagePattern,
+	// e.g. "without digest pin" for SecurityDrift digest-pin
+	// findings.
+	//
+	// Substring match (NOT regex) — chosen for predictability;
+	// operators can audit "what messages will this silence catch?"
+	// by reading the value. Empty = any message.
+	// +optional
+	MessagePattern string `json:"messagePattern,omitempty"`
 }
 
 // SilenceStatus tracks the runtime view of a silence.

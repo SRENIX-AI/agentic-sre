@@ -650,6 +650,17 @@ func aiArgs(cr *chav1alpha1.ClusterHealthAutopilot) []string {
 		}
 		args = append(args, fmt.Sprintf("--memory-topk=%d", topK))
 	}
+	// Phase 2.F.6 — leader-election args when replicas > 1.
+	// Mirrors the chart's cha.aiArgs template gate. Single-replica
+	// deploys (default) take the noop elector path in the binary.
+	if ai.Replicas > 1 {
+		names := NamesFor(cr)
+		args = append(args,
+			"--leader-election=true",
+			"--leader-election-namespace="+cr.Namespace,
+			"--leader-election-name="+names.AIWatch+"-leader",
+		)
+	}
 	// v1.18.0 — extraArgs escape hatch. Append AFTER typed args so a
 	// typed flag (e.g. --ai-tier) wins on duplicate keys (later args
 	// override earlier ones in pflag). Useful for cha-com flags the
@@ -740,7 +751,13 @@ func BuildAIWatchDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	}
 	names := NamesFor(cr)
 	labels := CommonLabels(cr, "aiwatch")
+	// Phase 2.F.6 — honor spec.ai.replicas. Default 1 (single-replica
+	// noop elector path). >1 enables lease leader-election; the chart-
+	// equivalent --leader-election args are appended in aiArgs() below.
 	replicas := int32(1)
+	if cr.Spec.AI != nil && cr.Spec.AI.Replicas > 0 {
+		replicas = cr.Spec.AI.Replicas
+	}
 
 	pod := corev1.PodSpec{
 		ServiceAccountName: ServiceAccountNameFor(cr),

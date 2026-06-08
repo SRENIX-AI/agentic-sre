@@ -47,6 +47,16 @@ type DeltaDiag struct {
 	// ApprovalURL is the signed click-to-fix URL. Only set in tandem
 	// with ProposedActionID.
 	ApprovalURL string
+
+	// Phase 2.B.6 — class-action URLs. Pre-signed with class-scoped
+	// JWTs by the CHA-com aiwatch when the "Approve+remember class"
+	// workflow is enabled. Each URL targets a separate approval-server
+	// endpoint; the operator's one click writes a policy AND
+	// (for approve-class) executes the action. Empty in the OSS-only
+	// path or any deploy with memory unconfigured.
+	ApproveClassURL string
+	DenyClassURL    string
+	SilenceClassURL string
 }
 
 // ResolvedDiag is a diagnostic that no longer appears in the current cycle.
@@ -103,6 +113,25 @@ func FormatSlackDelta(
 				denyURL := strings.Replace(d.ApprovalURL, "/approve?", "/deny?", 1)
 				fmt.Fprintf(&b, "  ✅ <%s|Approve> · ❌ <%s|Deny> · 📄 <%s&action=info|Details>\n",
 					d.ApprovalURL, denyURL, d.ApprovalURL)
+				// Phase 2.B.6 — class-action row. Hidden when class
+				// URLs are empty (legacy memory-off deploy stays
+				// byte-identical to pre-2.B Slack output).
+				if d.ApproveClassURL != "" || d.DenyClassURL != "" || d.SilenceClassURL != "" {
+					b.WriteString("  ")
+					sep := ""
+					if d.ApproveClassURL != "" {
+						fmt.Fprintf(&b, "%s🧠 <%s|Approve+remember class>", sep, d.ApproveClassURL)
+						sep = " · "
+					}
+					if d.DenyClassURL != "" {
+						fmt.Fprintf(&b, "%s❌ <%s|Deny+remember class>", sep, d.DenyClassURL)
+						sep = " · "
+					}
+					if d.SilenceClassURL != "" {
+						fmt.Fprintf(&b, "%s🔕 <%s|Silence class (7d)>", sep, d.SilenceClassURL)
+					}
+					b.WriteString("\n")
+				}
 			}
 		}
 	}

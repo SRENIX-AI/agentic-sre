@@ -188,6 +188,12 @@ func RegisterOSS(r *registry.Registry) {
 	if os.Getenv("CHA_ANALYZER_SECURITY_DRIFT") != "off" {
 		r.RegisterAnalyzer(diagnose.SecurityDrift{})
 	}
+	// v1.21.0 (Phase 2.E) — disruption-tier quota/PDB/Job signals.
+	// Each sub-signal in DisruptionDrift handles its own GVR-absence
+	// case gracefully; whole bundle opts out via env var.
+	if os.Getenv("CHA_ANALYZER_DISRUPTION_DRIFT") != "off" {
+		r.RegisterAnalyzer(diagnose.DisruptionDrift{})
+	}
 	// NetworkPolicyProposer is the Phase 2d-β OSS-side hook. Silent on
 	// CNIs that don't enforce NetworkPolicy (k3s-Flannel-only); on
 	// enforcing CNIs it emits one warning per uncovered namespace with

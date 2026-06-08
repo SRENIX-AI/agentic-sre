@@ -167,3 +167,66 @@ func TestCountMatches(t *testing.T) {
 		t.Error("unmatched silence should not appear in counts")
 	}
 }
+
+// ----- Phase 2.B.9: MessagePattern substring matching ------------------
+
+func TestMatches_MessagePattern_Substring(t *testing.T) {
+	s := chav1alpha1.Silence{
+		Spec: chav1alpha1.SilenceSpec{
+			Until: metav1.NewTime(time.Now().Add(time.Hour)),
+			Matcher: chav1alpha1.SilenceMatcher{
+				Source:         "SecurityDrift",
+				MessagePattern: "without digest pin",
+			},
+		},
+	}
+	d := diagnose.Diagnostic{
+		Source:  "SecurityDrift",
+		Subject: "Pod/prod/cha-com-xyz",
+		Message: "Pod prod/cha-com mounts 1 container image(s) without digest pin: foo=bar:1.0",
+	}
+	if !Matches(s, d, time.Now()) {
+		t.Errorf("matching message should be silenced")
+	}
+}
+
+func TestMatches_MessagePattern_NoSubstringNoMatch(t *testing.T) {
+	s := chav1alpha1.Silence{
+		Spec: chav1alpha1.SilenceSpec{
+			Until: metav1.NewTime(time.Now().Add(time.Hour)),
+			Matcher: chav1alpha1.SilenceMatcher{
+				Source:         "SecurityDrift",
+				MessagePattern: "without digest pin",
+			},
+		},
+	}
+	d := diagnose.Diagnostic{
+		Source:  "SecurityDrift",
+		Subject: "Pod/prod/x",
+		Message: "Pod x has PSS=privileged",
+	}
+	if Matches(s, d, time.Now()) {
+		t.Errorf("non-matching message must not be silenced")
+	}
+}
+
+func TestMatches_MessagePattern_AloneIsNotEmptyMatcher(t *testing.T) {
+	// MessagePattern alone (no Source/Subject/Severity) is a valid
+	// non-empty matcher — class-wide silence across sources.
+	s := chav1alpha1.Silence{
+		Spec: chav1alpha1.SilenceSpec{
+			Until: metav1.NewTime(time.Now().Add(time.Hour)),
+			Matcher: chav1alpha1.SilenceMatcher{
+				MessagePattern: "without digest pin",
+			},
+		},
+	}
+	d := diagnose.Diagnostic{
+		Source:  "AnyAnalyzer",
+		Subject: "Pod/x/y",
+		Message: "container is without digest pin somehow",
+	}
+	if !Matches(s, d, time.Now()) {
+		t.Errorf("MessagePattern-only matcher should still match on substring")
+	}
+}
