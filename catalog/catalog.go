@@ -134,6 +134,14 @@ func RegisterOSS(r *registry.Registry) {
 	if os.Getenv("CHA_PROBE_KONG") != "off" {
 		r.RegisterProbe(probe.Kong{})
 	}
+	// v1.23+ (M2) — KongRoutes verifies each Kong-managed Ingress
+	// has a ready backend Endpoint + that KongPlugin/Consumer
+	// references resolve. Silent on clusters without Kong-managed
+	// Ingresses (no Kong-class/annotation match). Toggle off via
+	// CHA_PROBE_KONG_ROUTES=off.
+	if os.Getenv("CHA_PROBE_KONG_ROUTES") != "off" {
+		r.RegisterProbe(probe.KongRoutes{})
+	}
 	if os.Getenv("CHA_PROBE_HPA_SCALING") != "off" {
 		r.RegisterProbe(probe.HPAScaling{})
 	}
