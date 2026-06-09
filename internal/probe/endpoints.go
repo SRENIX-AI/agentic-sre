@@ -533,10 +533,7 @@ func readBoundedBody(r io.Reader) (string, error) {
 	const maxBytes = 64 * 1024
 	buf := make([]byte, 0, 4096)
 	tmp := make([]byte, 4096)
-	for {
-		if len(buf) >= maxBytes {
-			break
-		}
+	for len(buf) < maxBytes {
 		n, err := r.Read(tmp)
 		if n > 0 {
 			buf = append(buf, tmp[:n]...)
@@ -554,6 +551,7 @@ func readBoundedBody(r io.Reader) (string, error) {
 // matchBody returns true when body satisfies the expect spec:
 //   - "regex:<pattern>"      → regular-expression match
 //   - any other text         → substring match (case-sensitive)
+//
 // Patterns that don't compile fall back to substring match.
 func matchBody(body, expect string) bool {
 	if strings.HasPrefix(expect, "regex:") {

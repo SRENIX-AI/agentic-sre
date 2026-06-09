@@ -165,9 +165,9 @@ func (c *Client) passesFilter(name string) bool {
 
 // alert is the trimmed shape we read from /api/v2/alerts.
 type alert struct {
-	Fingerprint string            `json:"fingerprint"`
+	Fingerprint string                 `json:"fingerprint"`
 	Status      struct{ State string } `json:"status"`
-	Labels      map[string]string `json:"labels"`
+	Labels      map[string]string      `json:"labels"`
 }
 
 // AlertName returns the canonical alertname label, falling back to

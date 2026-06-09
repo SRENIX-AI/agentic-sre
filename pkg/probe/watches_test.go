@@ -15,13 +15,13 @@ import (
 // nonWatching is a Probe that does NOT implement GVRWatcher.
 type nonWatching struct{}
 
-func (nonWatching) Name() string                            { return "nw" }
+func (nonWatching) Name() string                                      { return "nw" }
 func (nonWatching) Run(context.Context, snapshot.Source) probe.Result { return probe.Result{} }
 
 // watching is a Probe that DOES implement GVRWatcher.
 type watching struct{}
 
-func (watching) Name() string                            { return "w" }
+func (watching) Name() string                                      { return "w" }
 func (watching) Run(context.Context, snapshot.Source) probe.Result { return probe.Result{} }
 func (watching) GVRs() []schema.GroupVersionResource {
 	return []schema.GroupVersionResource{
