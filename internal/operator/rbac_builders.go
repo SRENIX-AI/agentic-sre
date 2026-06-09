@@ -118,7 +118,7 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 		// incorrectly flagged.
 		{
 			APIGroups: []string{""},
-			Resources: []string{"pods", "nodes", "persistentvolumeclaims", "events", "namespaces", "services", "endpoints"},
+			Resources: []string{"pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces", "services", "endpoints"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
 		// Secrets — names + keys only (ProactiveSecretKeyCheck doesn't

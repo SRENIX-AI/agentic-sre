@@ -13,6 +13,22 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.22.2] — 2026-06-09
+
+### Fixed — PVOrphan needs `persistentvolumes` in RBAC
+
+v1.22.1 added PV capture (`GVRPV` in CaptureGVRs) but the watcher's
+reader ClusterRole still only granted `persistentvolumeclaims`. The
+PV list call silently failed with RBAC denial, so PVOrphan kept
+emitting nothing on live clusters.
+
+Adds `persistentvolumes` to:
+- `charts/cluster-health-autopilot/templates/clusterrole-reader.yaml`
+- `internal/operator/rbac_builders.go` (used in operator-managed installs)
+
+Verified live: with the live ClusterRole patched and the watcher
+restarted, PVOrphan now fires on the dev cluster's 117 Released PVs.
+
 ## [1.22.1] — 2026-06-09
 
 ### Fixed — PVOrphan needs `persistentvolumes` in CaptureGVRs

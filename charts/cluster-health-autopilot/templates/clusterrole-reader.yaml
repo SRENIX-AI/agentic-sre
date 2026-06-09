@@ -9,7 +9,7 @@ rules:
   # Core probe surface.
   # watch verb added for cha watch --live (watcher mode); get+list retained for CronJob mode.
   - apiGroups: [""]
-    resources: ["pods", "nodes", "persistentvolumeclaims", "events", "namespaces"]
+    resources: ["pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces"]
     verbs: ["get", "list", "watch"]
   # Secret reads — the ProactiveSecretKeyCheck analyzer needs to inspect the
   # SET OF KEY NAMES on each Secret (not their byte values) to detect
