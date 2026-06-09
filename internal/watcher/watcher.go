@@ -145,6 +145,13 @@ var watchedGVRs = []schema.GroupVersionResource{
 	snapshot.GVRCephCluster,
 	snapshot.GVRSecret,
 	snapshot.GVRCertificate,
+	// Phase 1.7 (M1) — expanded watch set. Each entry is one inform/watch
+	// goroutine; cost is minimal because the watcher debounces all signals
+	// through trigCh. The ArgoCD CRD is optional — the watcher proceeds
+	// without it when the GVR isn't installed.
+	snapshot.GVRIngress,
+	snapshot.GVRHPA,
+	snapshot.GVRArgoCDApplication,
 }
 
 // seenEntry tracks the last-known fingerprint and Slack-post timestamp for one subject.
