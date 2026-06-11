@@ -164,7 +164,19 @@ type Config struct {
 	// literal "<name>=insecure-no-hmac". Cardinality of the slice =
 	// number of /webhook/<src> endpoints the receiver exposes.
 	WebhookSourceSpec []string
+
+	// HealthListen is the listen address for the always-on health
+	// server that serves GET /healthz (200 = process alive). It is
+	// independent of WebhookListen so liveness/readiness probes work
+	// even when the M6 webhook receiver is disabled. Empty = default
+	// defaultHealthListen (":8081").
+	HealthListen string
 }
+
+// defaultHealthListen is the health server's listen address when
+// Config.HealthListen is empty. A dedicated port (not the webhook
+// port) keeps /healthz available unconditionally.
+const defaultHealthListen = ":8081"
 
 // watchedGVRs is the set of resource types that trigger a diagnose cycle on change.
 // This mirrors the CaptureGVRs set used by `cha snapshot capture` plus Secrets.
@@ -243,6 +255,12 @@ type Watcher struct {
 	seen        map[string]*seenEntry
 	pendingURLs map[string]pendingURL // ai-tier approval URLs by ActionID
 
+	// now is the clock seam for TTL-based eviction of pendingURLs.
+	// Defaults to time.Now via New(); tests inject a fixed clock. Nil
+	// is tolerated (callers that build a Watcher literal without New):
+	// nowOrDefault() falls back to time.Now.
+	now func() time.Time
+
 	// lastCloudRun rate-limits cloud-probe iteration. Cloud probes are
 	// expensive (real API calls per provider) and uncorrelated with K8s
 	// events — they run on the initial cycle and then no more often
@@ -258,7 +276,38 @@ func New(lv *snapshot.Live, reg *registry.Registry, mut snapshot.Mutator, cfg Co
 		mut:  mut,
 		cfg:  cfg,
 		seen: make(map[string]*seenEntry),
+		now:  time.Now,
 	}
+}
+
+// nowOrDefault returns the injected clock, falling back to time.Now for
+// Watcher literals built without New() (some tests).
+func (w *Watcher) nowOrDefault() time.Time {
+	if w.now != nil {
+		return w.now()
+	}
+	return time.Now()
+}
+
+// healthListenAddr resolves the effective health listen address.
+func (w *Watcher) healthListenAddr() string {
+	if w.cfg.HealthListen != "" {
+		return w.cfg.HealthListen
+	}
+	return defaultHealthListen
+}
+
+// healthHandler returns the always-on health endpoint. GET /healthz
+// returns 200 unconditionally — it reports process liveness, not
+// readiness of any optional subsystem (webhook/prom triggers are
+// best-effort and must not gate the liveness probe).
+func (w *Watcher) healthHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(rw http.ResponseWriter, _ *http.Request) {
+		rw.WriteHeader(http.StatusOK)
+		_, _ = rw.Write([]byte("ok"))
+	})
+	return mux
 }
 
 // WithSilenceLister sets the per-cycle Silence source. Wired by the
@@ -327,9 +376,13 @@ func (w *Watcher) Run(ctx context.Context) error {
 		registerWebhookSources(h, w.cfg.WebhookSourceSpec, os.Getenv)
 		mux := http.NewServeMux()
 		mux.Handle("/webhook/", h)
-		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("ok"))
+		// Keep /healthz reachable on the webhook port too (legacy
+		// /webhook/health probes and any tooling pinned to the webhook
+		// listener). The always-on health server below is the canonical
+		// probe target.
+		mux.HandleFunc("/healthz", func(rw http.ResponseWriter, _ *http.Request) {
+			rw.WriteHeader(http.StatusOK)
+			_, _ = rw.Write([]byte("ok"))
 		})
 		srv := &http.Server{
 			Addr:              w.cfg.WebhookListen,
@@ -347,6 +400,32 @@ func (w *Watcher) Run(ctx context.Context) error {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			_ = srv.Shutdown(shutdownCtx)
+		}()
+	}
+
+	// Always-on health server. Serves GET /healthz unconditionally so
+	// the Deployment's liveness + readiness probes work regardless of
+	// whether the M6 webhook receiver is configured. Independent port
+	// (Config.HealthListen, default :8081) so its lifecycle never
+	// couples to the webhook trigger.
+	{
+		healthAddr := w.healthListenAddr()
+		healthSrv := &http.Server{
+			Addr:              healthAddr,
+			Handler:           w.healthHandler(),
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			log.Printf("watcher: health listener on %s", healthAddr)
+			if err := healthSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("watcher: health server: %v", err)
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = healthSrv.Shutdown(shutdownCtx)
 		}()
 	}
 

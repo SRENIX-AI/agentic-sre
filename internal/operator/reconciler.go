@@ -296,6 +296,29 @@ func (r *Reconciler) finalizeReaderRBAC(ctx context.Context, cr *chav1alpha1.Clu
 			return err
 		}
 	}
+
+	// P1.9(c) — clean up the cross-namespace approval events Role +
+	// RoleBinding. When spec.approval.auditNamespace points at a
+	// namespace OTHER than the CR's own, the "<name>-events" Role +
+	// RoleBinding are created there WITHOUT an ownerRef (cross-namespace
+	// ownerRefs are illegal), so Kubernetes GC never reaps them. The
+	// disable-while-alive teardown handles them, but a straight CR
+	// delete skips that path — they leaked for the cluster's lifetime
+	// until now. (When auditNamespace == cr.Namespace the objects are
+	// owner-ref'd and GC handles them; this delete is then a harmless
+	// no-op — NotFound is ignored.)
+	if auditNS := ApprovalAuditNamespace(cr); auditNS != cr.Namespace {
+		eventsName := ApprovalServerName(cr) + "-events"
+		eventsObjs := []client.Object{
+			&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: eventsName, Namespace: auditNS}},
+			&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: eventsName, Namespace: auditNS}},
+		}
+		for _, obj := range eventsObjs {
+			if err := client.IgnoreNotFound(r.Delete(ctx, obj)); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

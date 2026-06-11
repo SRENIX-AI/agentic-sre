@@ -316,6 +316,17 @@ ticketing:
 # report the post-fix cluster state.
 watcher:
   enabled: false
+  # replicas — watcher pod count. Default 1. Raising above 1 is ONLY
+  # safe with leaderElection.enabled=true (the CHA_LEADER_ELECTION path):
+  # otherwise every replica runs the probe/fix/post cycle and they race
+  # on DriftReports + double-post Slack. The chart FAILS the render when
+  # replicas > 1 and leaderElection.enabled=false.
+  replicas: 1
+  # healthListen — listen address for the always-on health server. GET
+  # /healthz returns 200 while the process is alive (independent of the
+  # webhook receiver), and the Deployment's liveness/readiness probes
+  # target it. The port number is derived from this address.
+  healthListen: ":8081"
   debounce: 10s                    # Debounce window after a Kubernetes event.
   resyncPeriod: 10m                # Periodic full re-diagnose regardless of events.
   # extraEnv — arbitrary additional env vars on the watcher AND diagnose
