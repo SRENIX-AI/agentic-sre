@@ -38,6 +38,6 @@ roleRef:
   name: {{ include "cha.fullname" . }}-silence
 subjects:
   - kind: ServiceAccount
-    name: {{ include "cha.fullname" . }}
+    name: {{ include "cha.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}
