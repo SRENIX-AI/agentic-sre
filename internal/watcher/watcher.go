@@ -677,8 +677,9 @@ func (w *Watcher) runCycle(ctx context.Context) {
 			// Resolve-on-clear (M2) MUST run BEFORE Reconcile — Reconcile
 			// deletes the DriftReport CRs for cleared subjects, and the
 			// persisted TicketRef lives on that CR's status.ticket. After
-			// Reconcile the ref is gone. The cleared set is exactly the
-			// diff's toResolve list (subjects seen last cycle, absent now).
+			// Reconcile the ref is gone. clearedSubjects is computed
+			// unconditionally (subjects seen last cycle, absent now) —
+			// unlike the diff's toResolve, which is gated on PostOnResolved.
 			if w.cfg.Ticketing.Sink != nil && len(clearedSubjects) > 0 {
 				report.RouteResolves(ctx, w.cfg.Ticketing, w.lv, mut, clearedSubjects, time.Now())
 			}
