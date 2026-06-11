@@ -67,7 +67,7 @@ The diagnose CronJob already had `spec.diagnose.activeDeadlineSeconds` (default 
 
 Operators can now set `spec.remediate.activeDeadlineSeconds: 900` (or whatever their workload needs). Default 120s preserved for low-finding clusters where it's fine.
 
-## [1.25.0] — 2026-06-11 — 2026-06-11
+## [1.25.0] — 2026-06-11
 
 Two follow-ups after live deployment surfaced operator-managed gaps + Slack-flood symptoms.
 
@@ -97,7 +97,7 @@ Built-in workload parents (apps/v1 ReplicaSet, batch/v1 Job, core/v1) are explic
 
 `detectOwner` no longer early-returns on nil annotations — operator-managed workloads typically have NO annotations at all, so the nil-anns path must still walk the OwnerReferences fallback.
 
-## [1.24.1] — 2026-06-10 — 2026-06-10
+## [1.24.1] — 2026-06-10
 
 ### Fixed — CRD schema for `spec.watcher.triggers` (v1.24.0 was unusable on schema-strict K8s)
 
@@ -107,7 +107,7 @@ This patch adds the matching schema to both `bundle/manifests/cha.bionicaisoluti
 
 Caught during live activation of M5 on the dev cluster (kubectl apply succeeded with a warning, but the field was stripped silently — operator rendered no trigger args).
 
-## [1.24.0] — 2026-06-10 — 2026-06-10
+## [1.24.0] — 2026-06-10
 
 Adversarial-review follow-up: operator-CR triggers + KEDA expansion.
 
@@ -134,7 +134,7 @@ The v1.6.0 M1 expansion added HPA + Ingress + ArgoCD + DaemonSet to the watcher'
 
 `v1.21.0+` adds observability log lines for Phase 3.B (auto-merge gate armed at startup) and Phase 3.C (`ai.target_history.applied` audit event when the prompt block fires).
 
-## [1.23.1] — 2026-06-10 — 2026-06-10
+## [1.23.1] — 2026-06-10
 
 Adversarial-review fixes after v1.23.0 went out.
 
@@ -1053,6 +1053,12 @@ Sprint 1–4 hardening release. Closes 22/23 items from the 2026-05-22 adversari
 ### Fixed
 - Investigation field now persists on the DriftReport CR.
 
+<!-- NOTE (P3.3): date inversion below — [1.5.0] is dated 2026-05-12 yet its
+     patch releases [1.5.1]/[1.5.2] above are dated 2026-05-11. Left as-is:
+     it is ambiguous whether 1.5.0's date or the patch dates are the typo, and
+     the historical tags can't be retro-corrected from the changelog alone.
+     Semver heading order is correct, so changelog-lint.sh (version-order based)
+     does not flag this. -->
 ## [1.5.0] — 2026-05-12
 
 ### Added

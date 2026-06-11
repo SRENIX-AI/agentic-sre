@@ -84,6 +84,12 @@ jobs:
           version: v2.12.0
           args: --timeout=5m
 
+      # CHANGELOG hygiene gate (P3.3b): one ISO date per version heading,
+      # descending semver order, no duplicate version headings. Catches the
+      # doubled-date / out-of-order defects that slipped into CHANGELOG.md.
+      - name: changelog lint
+        run: bash scripts/changelog-lint.sh
+
   chart-test:
     name: helm lint + unittest
     runs-on: ubuntu-latest
