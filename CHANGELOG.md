@@ -23,6 +23,10 @@ Before this change a `--webhook-source=<name>=<env-var>` whose env var was unset
 
 **Migration:** deployments that (knowingly or not) relied on an empty secret to run an unauthenticated source must either mount a real secret or switch the spec to `<name>=insecure-no-hmac`.
 
+### Fixed — feeder: workload digest index collided across workloads in a namespace (P1.6)
+
+The workload feeder's pod-digest index was keyed by (namespace, container-name) only, despite a comment claiming it was scoped to the owning controller. Two workloads in one namespace that both name their container e.g. `app` (extremely common) silently received each other's `image_digest` — first pod observed won — so a digest-pin PR proposal built downstream could previously cite a **sibling workload's digest** and pin the wrong image. The index is now scoped to the owning workload (each pod's controller ownerReference, with Deployment names recovered from the ReplicaSet `<deployment>-<pod-template-hash>` convention), and as a second guard a digest only attaches when the repo it was pulled from matches the workload's declared image repo (so a mid-rollout pod still running the old repo's image can no longer stamp its digest onto the new spec). Pods whose owner can't be resolved (bare pods, Jobs, bare ReplicaSets) now contribute no digest — fail-closed; the entry simply omits `image_digest` until a resolvable pod is observed.
+
 ### Fixed — operator: `spec.externalDNS` was accepted but did nothing (P1.5)
 
 The CRD documented `spec.externalDNS.cloudflare.*` (incl. `apiTokenSecretRef`) and the operator accepted it — but consumed it nowhere. The DNSChainDrift analyzer only wires its Cloudflare client when `CHA_CLOUDFLARE_TOKEN` is set at registration time, and nothing supplied that env on operator-managed installs, so external-hop DNS verification silently never ran. The operator's watcher Deployment now injects `CHA_CLOUDFLARE_TOKEN` via `secretKeyRef` from `apiTokenSecretRef.{name,key}` (key defaults to `token`) when `cloudflare.enabled=true`. The token value never appears in any manifest.
