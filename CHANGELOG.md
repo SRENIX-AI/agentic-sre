@@ -16,6 +16,17 @@ serves the latest tagged chart cut.
 ### Added — explicit OWASP K8s Top-10 mapping + posture-non-regression guard (G2)
 
 The fixer safety envelope (protected namespaces, GitOps-aware skip, dry-run, minimal RBAC) was real but the "we don't violate OWASP" property was unlabeled and untested. It is now explicit and locked. New `docs/OWASP_MAPPING.md` maps every fixer (`internal/fix/*.go`) and every security-relevant analyzer signal (`SecurityDrift`, `RBACDrift`, `TLSSecretMismatch`, `NetworkPolicyProposer`, the digest-pin signal, …) to the OWASP Kubernetes Top-10 item(s) it **respects** (fixers — proven not to violate) or **detects** (analyzers — observational, detection ≠ enforcement). Each fixer's doc comment now names the OWASP item it respects. The key deliverable is `internal/fix/owasp_posture_test.go`: a table-driven guard that runs every fixer against a fixture, captures each Delete/Patch, and asserts no mutation ever removes/weakens a NetworkPolicy (K07), adds `privileged`/`hostPath`/`hostNetwork`/a capability (K01), broadens RBAC (K03), downgrades a TLS secret reference (K08), or deletes in a protected namespace. A meta-check scans the package for every `Fixer`-implementing type and fails the build if a fixer has no posture-test entry — a new fixer **cannot** silently skip the guard. Wires nothing new into CI beyond the existing `go test ./...`.
+### Added — operator + chart: approval-server NetworkPolicy closes the X-Forwarded-User bypass (P2.6b)
+
+The approval-server trusts the `X-Forwarded-User` header for audit attribution. That header is injected by oauth2-proxy at the OIDC ingress after a successful login — but the approval-server's `ClusterIP` Service is reachable by any pod in the cluster, and a pod hitting it directly bypasses the ingress and can forge an arbitrary `X-Forwarded-User`. The approve/deny click still requires a valid one-time signed token, so this was defense-in-depth for attribution honesty, not an auth bypass — but it let any pod corrupt the audit trail's "who approved this" field.
+
+A new **opt-in NetworkPolicy** restricts ingress to the approval-server pods (port 8443/TCP) to **only the gateway/oauth2-proxy namespace**, so the only `X-Forwarded-User` the server ever sees is the one oauth2-proxy set.
+
+- Operator: `BuildApprovalServerNetworkPolicy(cr)` (owner-ref'd, reconciled alongside the approval-server Deployment/Service; torn down when disabled). `podSelector` matches the Deployment's pod labels exactly.
+- CRD/types: new `spec.approval.networkPolicy.{enabled, gatewayNamespaceSelector}` (chart CRD + bundle CRD + full-surface sample CR).
+- Chart: `templates/approval-server-networkpolicy.yaml` + `approval.networkPolicy.{enabled, gatewayNamespaceSelector}` values.
+- RBAC: the operator ClusterRole (chart + bundle CSV) gains `networkpolicies` create/update/patch/delete on `networking.k8s.io`.
+- **Default OFF**, strongly recommended in production. A NetworkPolicy is fail-closed: defaulting on with a wrong/absent `gatewayNamespaceSelector` (or on a CNI that doesn't enforce NetworkPolicy) would silently 0-route every approval click — a worse outcome than the bug it closes. `gatewayNamespaceSelector` is **REQUIRED** when enabled (operator fails the CR `Ready=False/InvalidSpec`; chart `fail`s the render) — there is no safe default selector.
 
 ### Added — watcher health probes + opt-in multi-replica via leader election (P1.9)
 
