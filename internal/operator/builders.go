@@ -52,6 +52,14 @@ const (
 
 	defaultSlackSecretKey = "WEBHOOK_URL"
 
+	// P1.5 — spec.externalDNS.cloudflare + webhook trigger Service
+	// defaults. The Cloudflare secret key default mirrors the
+	// CloudflareSecretRef.Key godoc (`Defaults to "token"`); the
+	// Service port default mirrors the CRD's servicePort godoc and
+	// the chart's `| default 8090` in watcher-webhook-service.yaml.
+	defaultCloudflareSecretKey       = "token"
+	defaultWebhookServicePort  int32 = 8090
+
 	// AI / aiwatch defaults. Mirror the chart's `cha.aiArgs` helper —
 	// the same wire-format the cha-com binary already accepts under
 	// chart-managed installs. Any divergence between the chart and
@@ -227,6 +235,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	env = append(env, alertingEnv(cr.Spec.Alerting)...)
 	env = append(env, ticketingEnv(cr.Spec.Ticketing)...)
 	env = append(env, watcherTriggerEnv(cr.Spec.Watcher)...)
+	env = append(env, externalDNSEnv(cr.Spec.ExternalDNS)...)
 
 	// v1.16.0 — When the CR's AI tier has approvalServerUrl set, hand
 	// it to the watcher so the OSS binary itself can mint signed
@@ -291,6 +300,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 							ImagePullPolicy: pullPolicy(cr.Spec.Image),
 							Args:            args,
 							Env:             env,
+							Ports:           watcherContainerPorts(cr.Spec.Watcher),
 							VolumeMounts:    watcherVolumeMounts,
 						},
 					},
@@ -1237,4 +1247,112 @@ func mustParseQuantity(s string) resource.Quantity {
 		panic(fmt.Sprintf("parse compile-time quantity %q: %v", s, err))
 	}
 	return q
+}
+
+// --- spec.externalDNS + webhook trigger Service (P1.5) ---
+//
+// Both field groups were accepted by the CRD schema but consumed
+// nowhere in the operator: catalog.go wires the DNSChainDrift
+// analyzer's Cloudflare client only when CHA_CLOUDFLARE_TOKEN is set
+// at registration time (nothing supplied it on operator-managed
+// installs), and the class-E webhook receiver was reachable only by
+// pod IP because no Service and no containerPort were ever built.
+
+// externalDNSEnv injects the Cloudflare API token for the
+// DNSChainDrift analyzer. Always a secretKeyRef — the token value
+// never appears in the Deployment manifest. Mirrors the chart's
+// env-from-secret helper shape (_helpers.tpl `cha.slackAlertsEnv` /
+// `cha.aiEnv`).
+func externalDNSEnv(e *chav1alpha1.ExternalDNSSpec) []corev1.EnvVar {
+	if e == nil || e.Cloudflare == nil || !e.Cloudflare.Enabled {
+		return nil
+	}
+	ref := e.Cloudflare.APITokenSecretRef
+	if ref == nil || ref.Name == "" {
+		// Enabled without a ref: nothing to project. An empty-name
+		// secretKeyRef would fail pod admission; the analyzer still
+		// runs its K8s-chain hops without external verification.
+		return nil
+	}
+	return []corev1.EnvVar{
+		secretRefEnv("CHA_CLOUDFLARE_TOKEN", ref.Name, defaultCloudflareSecretKey, ref.Key),
+	}
+}
+
+// webhookReceiverOn reports whether the class-E webhook receiver is
+// configured (listen address set) on an enabled watcher.
+func webhookReceiverOn(w *chav1alpha1.WatcherSpec) bool {
+	return w != nil && w.Enabled && w.Triggers != nil &&
+		w.Triggers.Webhook != nil && w.Triggers.Webhook.Listen != ""
+}
+
+// webhookServicePort resolves spec.watcher.triggers.webhook.servicePort
+// with the CRD-documented default of 8090. The chart uses the same
+// value for BOTH the Service port and the named `webhook`
+// containerPort (watcher-deployment.yaml + watcher-webhook-service.yaml).
+func webhookServicePort(h *chav1alpha1.WatcherWebhookTriggerSpec) int32 {
+	if h != nil && h.ServicePort != 0 {
+		return h.ServicePort
+	}
+	return defaultWebhookServicePort
+}
+
+// watcherContainerPorts declares the named `webhook` containerPort
+// whenever the receiver is listening — the chart does this gated on
+// webhook.listen alone (not serviceEnabled) so the port is resolvable
+// the moment the Service flips on. Empty otherwise (legacy shape).
+func watcherContainerPorts(w *chav1alpha1.WatcherSpec) []corev1.ContainerPort {
+	if !webhookReceiverOn(w) {
+		return nil
+	}
+	return []corev1.ContainerPort{{
+		Name:          "webhook",
+		ContainerPort: webhookServicePort(w.Triggers.Webhook),
+		Protocol:      corev1.ProtocolTCP,
+	}}
+}
+
+// WebhookServiceNameFor is the canonical webhook Service name —
+// matches the chart's `{{ include "cha.fullname" . }}-webhook`.
+func WebhookServiceNameFor(cr *chav1alpha1.ClusterHealthAutopilot) string {
+	return cr.Name + "-webhook"
+}
+
+// BuildWatcherWebhookService returns the ClusterIP Service exposing
+// the watcher's class-E webhook receiver, or nil when it shouldn't
+// exist. Mirrors the chart's watcher-webhook-service.yaml: rendered
+// only when BOTH webhook.listen is set AND serviceEnabled is true (a
+// Service with no receiver behind it would blackhole), selecting the
+// watcher pods, targetPort by the named `webhook` containerPort.
+func BuildWatcherWebhookService(cr *chav1alpha1.ClusterHealthAutopilot) *corev1.Service {
+	if !webhookReceiverOn(cr.Spec.Watcher) {
+		return nil
+	}
+	h := cr.Spec.Watcher.Triggers.Webhook
+	if !h.ServiceEnabled {
+		return nil
+	}
+	// Inherit watcher labels for the selector; stamp a distinct role
+	// label on the Service itself (chart parity:
+	// cha.bionicaisolutions.com/role=watcher-webhook).
+	selector := CommonLabels(cr, "watcher")
+	svcLabels := CommonLabels(cr, "watcher-webhook")
+	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Service"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      WebhookServiceNameFor(cr),
+			Namespace: cr.Namespace,
+			Labels:    svcLabels,
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: selector,
+			Ports: []corev1.ServicePort{{
+				Name:       "webhook",
+				Port:       webhookServicePort(h),
+				TargetPort: intstr.FromString("webhook"),
+				Protocol:   corev1.ProtocolTCP,
+			}},
+		},
+	}
 }

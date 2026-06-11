@@ -23,6 +23,14 @@ Before this change a `--webhook-source=<name>=<env-var>` whose env var was unset
 
 **Migration:** deployments that (knowingly or not) relied on an empty secret to run an unauthenticated source must either mount a real secret or switch the spec to `<name>=insecure-no-hmac`.
 
+### Fixed — operator: `spec.externalDNS` was accepted but did nothing (P1.5)
+
+The CRD documented `spec.externalDNS.cloudflare.*` (incl. `apiTokenSecretRef`) and the operator accepted it — but consumed it nowhere. The DNSChainDrift analyzer only wires its Cloudflare client when `CHA_CLOUDFLARE_TOKEN` is set at registration time, and nothing supplied that env on operator-managed installs, so external-hop DNS verification silently never ran. The operator's watcher Deployment now injects `CHA_CLOUDFLARE_TOKEN` via `secretKeyRef` from `apiTokenSecretRef.{name,key}` (key defaults to `token`) when `cloudflare.enabled=true`. The token value never appears in any manifest.
+
+### Fixed — operator: `spec.watcher.triggers.webhook.serviceEnabled` was accepted but did nothing (P1.5)
+
+The chart has shipped `watcher-webhook-service.yaml` since v1.23.0, but the operator built neither the ClusterIP Service nor the named `webhook` containerPort — an operator-managed webhook receiver was reachable only by pod IP. The operator now reconciles a `<cr>-webhook` ClusterIP Service (port = `servicePort`, default 8090; `targetPort: webhook`; selects the watcher pods) when `serviceEnabled=true`, owner-ref'd to the CR and torn down when the field flips off or the watcher is disabled, and declares the `webhook` containerPort whenever `webhook.listen` is set — both mirroring the chart's semantics exactly.
+
 ### Added — optional timestamped HMAC scheme (replay window)
 
 Webhook senders can now include `X-CHA-Timestamp: <unix-seconds>` and sign `timestamp + "." + body` (`X-CHA-Signature: sha256=hex(hmac-sha256(secret, ts+"."+body))`). Timestamped requests more than 5 minutes from server time are rejected with 401, so a captured request can no longer be replayed forever. Requests without the header keep the legacy body-only HMAC check (existing senders unaffected); a once-per-source log notice recommends adopting the timestamp header. New `webhook.SignWithTimestamp` helper for integrators.

@@ -300,22 +300,53 @@ func (r *Reconciler) finalizeReaderRBAC(ctx context.Context, cr *chav1alpha1.Clu
 }
 
 // reconcileWatcher creates / updates / deletes the watcher
-// Deployment based on Spec.Watcher.
+// Deployment based on Spec.Watcher, plus the class-E webhook
+// receiver Service when spec.watcher.triggers.webhook.serviceEnabled.
 func (r *Reconciler) reconcileWatcher(ctx context.Context, cr *chav1alpha1.ClusterHealthAutopilot) error {
 	desired := BuildWatcherDeployment(cr)
 	name := NamesFor(cr).Watcher
+	svcName := WebhookServiceNameFor(cr)
 	if desired == nil {
-		return r.deleteIfExists(ctx, &appsv1.Deployment{}, cr.Namespace, name)
+		// Watcher disabled — tear down the Deployment AND the webhook
+		// Service (the latter is harmless if absent).
+		if err := r.deleteIfExists(ctx, &appsv1.Deployment{}, cr.Namespace, name); err != nil {
+			return err
+		}
+		return r.deleteIfExists(ctx, &corev1.Service{}, cr.Namespace, svcName)
 	}
 	if err := controllerutilSetOwnerRef(cr, desired, r.Scheme); err != nil {
 		return err
 	}
-	return r.createOrUpdate(ctx, desired, func(current client.Object) {
+	if err := r.createOrUpdate(ctx, desired, func(current client.Object) {
 		c := current.(*appsv1.Deployment)
 		c.Spec.Replicas = desired.Spec.Replicas
 		c.Spec.Template = desired.Spec.Template
 		c.Spec.Strategy = desired.Spec.Strategy
 		mergeLabels(&c.ObjectMeta, desired.Labels)
+	}); err != nil {
+		return err
+	}
+
+	// P1.5 — webhook receiver Service. Reconciled separately so a
+	// serviceEnabled flip (off/on/port-change) doesn't perturb the
+	// Deployment rollout. Returns nil when the receiver isn't
+	// listening or serviceEnabled=false; tears down the Service when
+	// it flips off. Mirrors the aiwatch metrics-Service pattern AND
+	// the chart's watcher-webhook-service.yaml semantics.
+	desiredSvc := BuildWatcherWebhookService(cr)
+	if desiredSvc == nil {
+		return r.deleteIfExists(ctx, &corev1.Service{}, cr.Namespace, svcName)
+	}
+	if err := controllerutilSetOwnerRef(cr, desiredSvc, r.Scheme); err != nil {
+		return err
+	}
+	return r.createOrUpdate(ctx, desiredSvc, func(current client.Object) {
+		c := current.(*corev1.Service)
+		// Don't touch clusterIP (immutable). Tracking ports +
+		// selector + labels.
+		c.Spec.Ports = desiredSvc.Spec.Ports
+		c.Spec.Selector = desiredSvc.Spec.Selector
+		mergeLabels(&c.ObjectMeta, desiredSvc.Labels)
 	})
 }
 
