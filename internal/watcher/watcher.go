@@ -159,9 +159,10 @@ type Config struct {
 
 	// WebhookSourceSpec is the operator-supplied list of registered
 	// webhook sources. Each entry is "<name>=<env-var-with-hmac-secret>".
-	// An empty env-var name disables HMAC verification for that source
-	// (debug-only). Cardinality of the slice = number of /webhook/<src>
-	// endpoints the receiver exposes.
+	// FAIL-CLOSED: a missing/empty env var disables the SOURCE (not the
+	// verification); the only unauthenticated form is the explicit
+	// literal "<name>=insecure-no-hmac". Cardinality of the slice =
+	// number of /webhook/<src> endpoints the receiver exposes.
 	WebhookSourceSpec []string
 }
 
