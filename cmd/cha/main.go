@@ -70,7 +70,12 @@ func buildKubeConfigForSilence(kubeconfigPath string) (*rest.Config, error) {
 // version is overridden at build time via -ldflags "-X main.version=v0.1.0".
 var version = "dev"
 
-func main() {
+// newRootCmd builds the full `cha` cobra command tree (root +
+// subcommands). Factored out of main() so the chart-args↔binary-flags
+// parity gate (cmd/cha/chartflags_test.go) can introspect the real
+// FlagSets instead of a hand-maintained list — keeping the gate's
+// notion of "valid flags" in lockstep with the binary.
+func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "cha",
 		Short: "Cluster Health Autopilot — detect, fix, re-verify, report.",
@@ -96,6 +101,11 @@ Subcommands:
 	root.AddCommand(anonymizeCmd())
 	root.AddCommand(summarizeCmd())
 	root.AddCommand(versionCmd())
+	return root
+}
+
+func main() {
+	root := newRootCmd()
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
