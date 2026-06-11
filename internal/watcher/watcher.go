@@ -842,7 +842,11 @@ func (w *Watcher) loadSeenFromDriftReports(ctx context.Context) {
 		// say so: a transient apiserver error here means every known
 		// finding re-posts to Slack on the first cycle — without this
 		// log line that flood looks inexplicable.
-		log.Printf("watcher: pre-populating seen map from DriftReports failed (Slack may re-post known findings): err=%v", err)
+		if err == nil {
+			log.Printf("watcher: pre-populating seen map from DriftReports failed (Slack may re-post known findings): empty list response")
+		} else {
+			log.Printf("watcher: pre-populating seen map from DriftReports failed (Slack may re-post known findings): %v", err)
+		}
 		return
 	}
 	w.mu.Lock()
