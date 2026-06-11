@@ -133,24 +133,33 @@ func webhookCR() *chav1alpha1.ClusterHealthAutopilot {
 	return cr
 }
 
+// webhookPort returns the named "webhook" containerPort, or nil. The
+// always-on "health" port (P1.9) is present on every watcher container,
+// so these tests assert the webhook port specifically rather than count.
+func webhookPort(ports []corev1.ContainerPort) *corev1.ContainerPort {
+	for i := range ports {
+		if ports[i].Name == "webhook" {
+			return &ports[i]
+		}
+	}
+	return nil
+}
+
 func TestBuildWatcherDeployment_WebhookListen_ContainerPort(t *testing.T) {
 	// The chart declares the named `webhook` containerPort whenever
 	// listen is set (watcher-deployment.yaml), so the Service's
 	// targetPort:webhook resolves. Mirror that.
 	cr := webhookCR()
 	d := BuildWatcherDeployment(cr)
-	ports := d.Spec.Template.Spec.Containers[0].Ports
-	if len(ports) != 1 {
-		t.Fatalf("webhook.listen set: want exactly 1 containerPort; got %+v", ports)
+	wp := webhookPort(d.Spec.Template.Spec.Containers[0].Ports)
+	if wp == nil {
+		t.Fatalf("webhook.listen set: want a named webhook containerPort; got %+v", d.Spec.Template.Spec.Containers[0].Ports)
 	}
-	if ports[0].Name != "webhook" {
-		t.Errorf("containerPort name=%q want webhook (Service targetPort is by-name)", ports[0].Name)
+	if wp.ContainerPort != 8090 {
+		t.Errorf("containerPort=%d want default 8090", wp.ContainerPort)
 	}
-	if ports[0].ContainerPort != 8090 {
-		t.Errorf("containerPort=%d want default 8090", ports[0].ContainerPort)
-	}
-	if ports[0].Protocol != corev1.ProtocolTCP {
-		t.Errorf("protocol=%q want TCP", ports[0].Protocol)
+	if wp.Protocol != corev1.ProtocolTCP {
+		t.Errorf("protocol=%q want TCP", wp.Protocol)
 	}
 }
 
@@ -158,18 +167,19 @@ func TestBuildWatcherDeployment_WebhookExplicitServicePort_ContainerPort(t *test
 	cr := webhookCR()
 	cr.Spec.Watcher.Triggers.Webhook.ServicePort = 9099
 	d := BuildWatcherDeployment(cr)
-	ports := d.Spec.Template.Spec.Containers[0].Ports
-	if len(ports) != 1 || ports[0].ContainerPort != 9099 {
-		t.Errorf("servicePort=9099 must drive the containerPort (chart parity); got %+v", ports)
+	wp := webhookPort(d.Spec.Template.Spec.Containers[0].Ports)
+	if wp == nil || wp.ContainerPort != 9099 {
+		t.Errorf("servicePort=9099 must drive the webhook containerPort (chart parity); got %+v", d.Spec.Template.Spec.Containers[0].Ports)
 	}
 }
 
-func TestBuildWatcherDeployment_NoWebhookListen_NoPorts(t *testing.T) {
+func TestBuildWatcherDeployment_NoWebhookListen_NoWebhookPort(t *testing.T) {
 	cr := sampleCR()
 	cr.Spec.Watcher = &chav1alpha1.WatcherSpec{Enabled: true}
 	d := BuildWatcherDeployment(cr)
-	if ports := d.Spec.Template.Spec.Containers[0].Ports; len(ports) != 0 {
-		t.Errorf("no webhook receiver: want no containerPorts; got %+v", ports)
+	// Health port is always present (P1.9); only the webhook port must be absent.
+	if wp := webhookPort(d.Spec.Template.Spec.Containers[0].Ports); wp != nil {
+		t.Errorf("no webhook receiver: want no webhook containerPort; got %+v", wp)
 	}
 }
 
