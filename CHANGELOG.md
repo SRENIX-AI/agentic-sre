@@ -13,6 +13,14 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — chart + operator: ticketing.{jira,servicenow,route} values → CHA-com ticketing env (makes the paid Jira/ServiceNow sinks deployable)
+
+The CHA-com Jira/ServiceNow ticketing sinks just shipped but were undeployable end-to-end: nothing populated the `CHA_JIRA_*` / `CHA_SERVICENOW_*` / `CHA_TICKETING_ROUTE` env vars the aiwatch (cha-com) container reads. This wires them through both render paths the OSS chart/operator own.
+
+- **values.yaml** — the `ticketing:` block gains `route` (→ `CHA_TICKETING_ROUTE`), `jira.{url,project,email,issueType,priority.{critical,warning,info},webUrlBase}` + `jira.tokenSecret.{name,key}` (→ `CHA_JIRA_TOKEN`), and `servicenow.{url,user,urgency.*,impact.*,webUrlBase}` + `servicenow.passwordSecret.{name,key}` / `servicenow.bearerSecret.{name,key}` (→ `CHA_SERVICENOW_PASSWORD` / `CHA_SERVICENOW_BEARER`). All default empty/unset — byte-identical render for existing installs.
+- **Render (chart + operator).** New `cha.ticketingProviderEnv` helper (mirroring `cha.aiEnv`) and `internal/operator` `ticketingProviderEnv` add the env to the aiwatch container in lockstep. Plain (non-secret) values render as `value:`; **credentials (Jira token, ServiceNow password/bearer) render as `valueFrom.secretKeyRef` ONLY — the literal never appears in the manifest**, mirroring the existing `ai.apiKey.secretName` pattern. Each env var is emitted only when its source is set: no empty `CHA_JIRA_TOKEN` when no secret-ref is configured.
+- **CRD parity.** `TicketingSpec` gains `Route`, `Jira` (`TicketingJiraSpec`), and `ServiceNow` (`TicketingServiceNowSpec`) with secret-refs via a new `TicketingSecretRef`; hand-ported into the chart CRD, the bundle CRD, and `bundle/tests/sample-cr-full.yaml` (full-surface coverage). DeepCopy hand-written per repo convention. All parity gates (CRD↔Go-types, bundle↔chart, full-surface sample, RBAC, toggle/flag) stay green. No RBAC change — the kubelet resolves the secret-ref at pod admission; the operator only emits the reference.
+
 ### Fixed — chart: silence ClusterRoleBinding bound the wrong ServiceAccount (live-verification finding)
 
 The chart's `clusterrole-silence` binding referenced the watcher SA via `cha.fullname` instead of `cha.serviceAccountName` (`<fullname>-sa`) — the SA the watcher Deployment actually runs as. So on chart installs the watcher could not `list silences`, and silence-filtering was **skipped on every diagnose cycle** (live symptom: `silences.cha.bionicaisolutions.com is forbidden`). Found by deploying the merged build to a real (RBAC-enforcing) kind cluster; unit tests missed it because the chart↔operator RBAC parity test excludes the `cha.bionicaisolutions.com` group. Fixed the binding + added `internal/operator/chart_watcher_binding_sa_test.go` asserting every watcher read-role binding uses `cha.serviceAccountName`.
