@@ -13,6 +13,9 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Added — CycloneDX SBOM + cosign keyless image signing + attestation (P6.2)
+
+The release pipeline now emits verifiable supply-chain provenance, making the website's "SBOM (paid)" and "Cosign-signed container images with attestation" claims real and customer-verifiable. `.goreleaser.yaml` gains three pipes: `sboms:` (syft → one **CycloneDX JSON** SBOM per binary archive, attached to each GitHub Release), `signs:` (cosign **keyless** `sign-blob` over `checksums.txt` → `checksums.txt.sigstore.json`, transitively covering every archive + SBOM), and `docker_signs:` (cosign **keyless** `sign` over every container image + multi-arch manifest on both Docker Hub and GHCR, recorded in the Rekor transparency log). Keyless = no private key on disk: the release workflow's GitHub OIDC token (`permissions: id-token: write`) is exchanged for a short-lived Fulcio certificate. The release workflow installs syft (`anchore/sbom-action/download-syft`) + cosign (`sigstore/cosign-installer`) and runs goreleaser with `--timeout 2h` (the 1h internal default is too tight once SBOM + signing pipes are added on top of multi-arch buildx). New `docs/RELEASE_VERIFICATION.md` documents the exact `cosign verify` / `cosign verify-blob` commands (certificate-identity-regexp + GitHub OIDC issuer) and how to download + inspect a CycloneDX SBOM. Verified locally: `goreleaser check` passes and `goreleaser release --snapshot` produces six valid CycloneDX 1.6 SBOMs (104 components each); the signing pipes only execute in CI under a real OIDC token.
 ### Added — ticketing: resolve-on-clear + debounced comment-on-recurrence (M2, P6.5) — tickets now auto-close
 
 `Sink.Resolve` and `Sink.Comment` shipped in M1 with **zero call sites** — tickets never auto-closed and never got a recurrence comment, which trains operators to ignore the ticket sink. M2 wires both.

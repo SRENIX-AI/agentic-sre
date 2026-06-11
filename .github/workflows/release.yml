@@ -16,7 +16,7 @@ on:
 permissions:
   contents: write    # create the GitHub Release
   packages: write    # push to ghcr.io
-  id-token: write    # for future Sigstore/cosign signing
+  id-token: write    # OIDC token for keyless Sigstore/cosign signing (P6.2)
 
 jobs:
   release:
@@ -73,6 +73,15 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Supply-chain tooling for the GoReleaser sboms/signs/docker_signs pipes
+      # (P6.2). syft generates the CycloneDX SBOMs; cosign does the keyless
+      # (Fulcio/Rekor) blob + image signing using the workflow's OIDC token.
+      - name: Install Syft (CycloneDX SBOM generation)
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Install Cosign (keyless image + checksum signing)
+        uses: sigstore/cosign-installer@v3
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -86,6 +95,11 @@ jobs:
           # (run 26553916530 died at ~8m with no GoReleaser error — the
           # signature of a kernel OOM kill). Serializing bounds peak memory
           # to a single Go build; the 60-min timeout has ample headroom.
-          args: release --clean --parallelism 1
+          #
+          # --timeout 2h: GoReleaser's internal top-level timeout defaults to
+          # 1h. Multi-arch buildx + the new SBOM (sboms) and keyless cosign
+          # (signs + docker_signs) pipes can push total wall-time past 1h on
+          # busy hosted runners; 2h gives headroom without re-tagging.
+          args: release --clean --parallelism 1 --timeout 2h
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
