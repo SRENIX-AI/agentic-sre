@@ -13,6 +13,20 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Changed — webhook trigger sources now FAIL CLOSED on missing HMAC secret (P1.1, breaking-ish)
+
+Before this change a `--webhook-source=<name>=<env-var>` whose env var was unset or empty (secret not mounted, ESO key drift, typo, or a spec entry without `=`) silently registered the source with HMAC verification DISABLED — any unauthenticated POST to `/webhook/<name>` triggered a full diagnose cycle (and fixer churn under `--remedy`). Now:
+
+- Registration fails closed: a missing/empty env var or malformed spec logs an `ERROR … source disabled (fail-closed)` and the source is NOT registered (requests 404).
+- Defense in depth: should a source ever be registered with an empty secret, the handler rejects every request for it with 401 instead of skipping verification.
+- Explicit opt-out: the literal spec `<name>=insecure-no-hmac` registers a deliberately unauthenticated source and logs a loud `UNAUTHENTICATED webhook source` warning at startup.
+
+**Migration:** deployments that (knowingly or not) relied on an empty secret to run an unauthenticated source must either mount a real secret or switch the spec to `<name>=insecure-no-hmac`.
+
+### Added — optional timestamped HMAC scheme (replay window)
+
+Webhook senders can now include `X-CHA-Timestamp: <unix-seconds>` and sign `timestamp + "." + body` (`X-CHA-Signature: sha256=hex(hmac-sha256(secret, ts+"."+body))`). Timestamped requests more than 5 minutes from server time are rejected with 401, so a captured request can no longer be replayed forever. Requests without the header keep the legacy body-only HMAC check (existing senders unaffected); a once-per-source log notice recommends adopting the timestamp header. New `webhook.SignWithTimestamp` helper for integrators.
+
 ## [1.25.1] — 2026-06-11
 
 ### Fixed — goreleaser disk-OOM on GH-hosted runner

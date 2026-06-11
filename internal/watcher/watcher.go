@@ -323,18 +323,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 	// here so secrets never sit in the Config struct.
 	if w.cfg.WebhookListen != "" {
 		h := webhook.New(trigCh)
-		for _, spec := range w.cfg.WebhookSourceSpec {
-			parts := strings.SplitN(spec, "=", 2)
-			name := strings.TrimSpace(parts[0])
-			if name == "" {
-				continue
-			}
-			var secret string
-			if len(parts) == 2 {
-				secret = os.Getenv(strings.TrimSpace(parts[1]))
-			}
-			h.RegisterSource(name, secret)
-		}
+		registerWebhookSources(h, w.cfg.WebhookSourceSpec, os.Getenv)
 		mux := http.NewServeMux()
 		mux.Handle("/webhook/", h)
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -388,6 +377,44 @@ func (w *Watcher) Run(ctx context.Context) error {
 // watchGVR maintains a reconnecting watch for a single GVR.
 // Any ADDED/MODIFIED/DELETED event sends to trigCh (non-blocking).
 // ResourceNotFound (CRD absent) causes the goroutine to exit silently.
+// insecureNoHMACToken is the literal spec value (in place of an env-var
+// name) that registers a webhook source with HMAC verification disabled.
+const insecureNoHMACToken = "insecure-no-hmac"
+
+// registerWebhookSources parses each "<name>=<env-var-with-secret>"
+// trigger spec and registers it on h. FAIL-CLOSED: a malformed spec
+// (no '='), or an env var that is unset/empty, logs an error and the
+// source is NOT registered — an unauthenticated source must never be
+// created by accident. The only way to register a source without HMAC
+// is the explicit literal "<name>=insecure-no-hmac", which logs a loud
+// warning. getenv is injectable for tests (os.Getenv in production).
+func registerWebhookSources(h *webhook.Handler, specs []string, getenv func(string) string) {
+	for _, spec := range specs {
+		parts := strings.SplitN(spec, "=", 2)
+		name := strings.TrimSpace(parts[0])
+		if name == "" {
+			log.Printf("watcher: ERROR webhook source spec %q has an empty name — source disabled (fail-closed)", spec)
+			continue
+		}
+		if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+			log.Printf("watcher: ERROR webhook source %q: spec is missing '=<env-var-with-secret>' — source disabled (fail-closed)", name)
+			continue
+		}
+		envVar := strings.TrimSpace(parts[1])
+		if envVar == insecureNoHMACToken {
+			log.Printf("watcher: WARNING UNAUTHENTICATED webhook source %s — anyone who can reach the listener can trigger diagnose cycles", name)
+			h.RegisterInsecureSource(name)
+			continue
+		}
+		secret := getenv(envVar)
+		if secret == "" {
+			log.Printf("watcher: ERROR webhook source %q: env var %s is unset or empty — source disabled (fail-closed); mount the secret or use '%s=%s' to explicitly opt out of HMAC", name, envVar, name, insecureNoHMACToken)
+			continue
+		}
+		h.RegisterSource(name, secret)
+	}
+}
+
 func (w *Watcher) watchGVR(ctx context.Context, gvr schema.GroupVersionResource, trigCh chan<- struct{}) {
 	for {
 		if ctx.Err() != nil {

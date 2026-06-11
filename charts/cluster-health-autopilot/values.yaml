@@ -362,9 +362,17 @@ watcher:
     webhook:
       listen: ""               # e.g. ":8090" — empty disables receiver
       # Repeatable list of "<source-name>=<env-var-with-hmac-secret>".
-      # The env var is looked up at startup; a missing/empty secret
-      # registers the source with HMAC verification DISABLED (debug-only).
-      # Production must always set a non-empty secret per source.
+      # The env var is looked up at startup. FAIL-CLOSED (v1.26+): a
+      # missing/empty env var or a malformed entry logs an error and the
+      # source is NOT registered (it 404s) — it never silently runs
+      # unauthenticated. The only opt-out is the explicit literal
+      # "<source-name>=insecure-no-hmac", which registers the source
+      # with verification disabled and logs a loud startup warning.
+      # Senders should POST with X-CHA-Timestamp=<unix-seconds> and
+      # X-CHA-Signature=sha256=hex(hmac-sha256(secret, ts+"."+body));
+      # timestamps >5m from server time are rejected (replay window).
+      # Body-only signatures (no timestamp header) remain accepted for
+      # backward compatibility.
       sources: []              # e.g. ["vault=CHA_WEBHOOK_VAULT_SECRET","cert-manager=CHA_WEBHOOK_CM_SECRET"]
       service:
         enabled: false         # render a ClusterIP Service for the receiver
