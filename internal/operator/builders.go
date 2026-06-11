@@ -199,6 +199,7 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 	if replicas == 0 {
 		replicas = 1
 	}
+	watcherLiveness, watcherReadiness := watcherHealthProbes()
 	debounce := cr.Spec.Watcher.Debounce
 	if debounce == "" {
 		debounce = defaultWatcherDebounce
@@ -302,6 +303,8 @@ func BuildWatcherDeployment(cr *chav1alpha1.ClusterHealthAutopilot) *appsv1.Depl
 							Env:             env,
 							Ports:           watcherContainerPorts(cr.Spec.Watcher),
 							VolumeMounts:    watcherVolumeMounts,
+							LivenessProbe:   watcherLiveness,
+							ReadinessProbe:  watcherReadiness,
 						},
 					},
 				},
@@ -1297,19 +1300,49 @@ func webhookServicePort(h *chav1alpha1.WatcherWebhookTriggerSpec) int32 {
 	return defaultWebhookServicePort
 }
 
-// watcherContainerPorts declares the named `webhook` containerPort
-// whenever the receiver is listening — the chart does this gated on
-// webhook.listen alone (not serviceEnabled) so the port is resolvable
-// the moment the Service flips on. Empty otherwise (legacy shape).
+// watcherHealthPort is the always-on /healthz listen port — matches the
+// binary's --health-listen default (:8081, internal/watcher) and the
+// chart's watcher.healthListen, keeping operator- and helm-managed
+// watcher Deployments at parity.
+const watcherHealthPort = 8081
+
+// watcherContainerPorts declares the always-on `health` containerPort
+// plus the named `webhook` port when the receiver is listening — the
+// chart does the same (webhook gated on webhook.listen alone so the
+// port is resolvable the moment the Service flips on).
 func watcherContainerPorts(w *chav1alpha1.WatcherSpec) []corev1.ContainerPort {
-	if !webhookReceiverOn(w) {
-		return nil
-	}
-	return []corev1.ContainerPort{{
-		Name:          "webhook",
-		ContainerPort: webhookServicePort(w.Triggers.Webhook),
+	ports := []corev1.ContainerPort{{
+		Name:          "health",
+		ContainerPort: watcherHealthPort,
 		Protocol:      corev1.ProtocolTCP,
 	}}
+	if webhookReceiverOn(w) {
+		ports = append(ports, corev1.ContainerPort{
+			Name:          "webhook",
+			ContainerPort: webhookServicePort(w.Triggers.Webhook),
+			Protocol:      corev1.ProtocolTCP,
+		})
+	}
+	return ports
+}
+
+// watcherHealthProbes returns liveness+readiness probes hitting the
+// always-on /healthz endpoint — parity with the chart's watcher
+// Deployment probe stanzas.
+func watcherHealthProbes() (*corev1.Probe, *corev1.Probe) {
+	probe := func(initialDelay int32) *corev1.Probe {
+		return &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/healthz",
+					Port: intstr.FromString("health"),
+				},
+			},
+			InitialDelaySeconds: initialDelay,
+			PeriodSeconds:       10,
+		}
+	}
+	return probe(10), probe(5) // liveness, readiness
 }
 
 // WebhookServiceNameFor is the canonical webhook Service name —
