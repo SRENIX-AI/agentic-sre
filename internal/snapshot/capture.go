@@ -47,6 +47,11 @@ var CaptureGVRs = []schema.GroupVersionResource{
 	GVRIngress,
 	GVRService,
 	GVREndpoints,
+	// EndpointSlice (discovery.k8s.io/v1) — capture parity for the
+	// EndpointSlice-first reads in DNSChainDrift + KongRoutes. Legacy
+	// GVREndpoints stays above so old tooling and the legacy-fallback
+	// read paths keep working against fresh snapshots.
+	GVREndpointSlice,
 	GVRServiceAccount,
 	// GVRSecret intentionally excluded — see comment above.
 }

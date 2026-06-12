@@ -35,7 +35,17 @@ type LiveSource struct {
 // NewLiveSource constructs a LiveSource from an existing rest.Config.
 // Useful for paid-tier binaries that build their own client (e.g. for
 // custom transport / TLS wiring).
+//
+// When the caller hasn't installed any warning handler, the
+// Endpoints-deprecation filter (SuppressEndpointsDeprecationWarnings) is
+// applied to a COPY of cfg so the deliberate legacy core/v1 Endpoints
+// fallback reads don't print one deprecation line per call. A
+// caller-provided WarningHandler / WarningHandlerWithContext is always
+// respected as-is.
 func NewLiveSource(cfg *rest.Config) (*LiveSource, error) {
+	if cfg != nil && cfg.WarningHandler == nil && cfg.WarningHandlerWithContext == nil {
+		cfg = SuppressEndpointsDeprecationWarnings(rest.CopyConfig(cfg))
+	}
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("dynamic client: %w", err)

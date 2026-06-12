@@ -396,8 +396,8 @@ func (a DNSChainDrift) Run(ctx context.Context, src snapshot.Source) []Diagnosti
 
 			// ── 5d: Endpoints layer ───────────────────────────────────────────
 
-			ep, epErr := src.Get(ctx, snapshot.GVREndpoints, be.svcNs, be.svcName)
-			if epErr != nil || ep == nil || !hasReadyEndpoints(ep) {
+			readyCount, epOK := serviceReadyAddressCount(ctx, src, be.svcNs, be.svcName)
+			if !epOK || readyCount == 0 {
 				out = append(out, Diagnostic{
 					Subject:  subj("service-no-endpoints", be.svcNs+"/"+be.svcName+"/"+host),
 					Severity: "critical",
@@ -675,23 +675,73 @@ func buildK8sSummary(ctx context.Context, src snapshot.Source, host string, be *
 		return fmt.Sprintf("Ingress `%s/%s` exists but references a missing Service `%s/%s`.",
 			be.ns, be.ingName, be.svcNs, be.svcName)
 	}
-	ep, epErr := src.Get(ctx, snapshot.GVREndpoints, be.svcNs, be.svcName)
-	if epErr != nil || ep == nil || !hasReadyEndpoints(ep) {
+	count, epOK := serviceReadyAddressCount(ctx, src, be.svcNs, be.svcName)
+	if !epOK || count == 0 {
 		return fmt.Sprintf("Ingress `%s/%s` exists and points at Service `%s/%s` (zero ready endpoints).",
 			be.ns, be.ingName, be.svcNs, be.svcName)
 	}
-	count := readyAddressCount(ep)
 	return fmt.Sprintf("Ingress `%s/%s` exists and points at Service `%s/%s` (%d ready endpoint(s)) — the cluster side is healthy; only the external DNS hop is missing.",
 		be.ns, be.ingName, be.svcNs, be.svcName, count)
 }
 
-// hasReadyEndpoints returns true when the Endpoints object has at least one
-// ready address across all subsets.
-func hasReadyEndpoints(ep *unstructured.Unstructured) bool {
-	return readyAddressCount(ep) > 0
+// serviceReadyAddressCount resolves how many ready endpoint addresses back
+// Service ns/name.
+//
+// It reads discovery.k8s.io/v1 EndpointSlices FIRST (the canonical endpoint
+// API — slices are per-Service shards linked back via the
+// `kubernetes.io/service-name` label) and only falls back to the deprecated
+// core/v1 Endpoints object when no slice for the Service is visible: old
+// snapshot captures (pre-EndpointSlice CaptureGVRs) and clusters without the
+// EndpointSlice mirroring controller. The fallback keeps the analyzer's
+// pre-migration semantics byte-compatible for those sources; the deprecation
+// warning the fallback read triggers in live mode is suppressed by
+// snapshot.SuppressEndpointsDeprecationWarnings.
+//
+// ok=false means NEITHER API could answer (slice list failed/empty AND the
+// legacy Endpoints Get errored) — callers treat that exactly like the old
+// `Get(GVREndpoints)` error path: the chain is considered broken.
+func serviceReadyAddressCount(ctx context.Context, src snapshot.Source, ns, name string) (count int, ok bool) {
+	slices, err := src.List(ctx, snapshot.GVREndpointSlice, ns)
+	if err == nil && slices != nil {
+		matched := false
+		for i := range slices.Items {
+			s := &slices.Items[i]
+			owner, _, _ := unstructured.NestedString(s.Object, "metadata", "labels", "kubernetes.io/service-name")
+			if owner != name {
+				continue
+			}
+			matched = true
+			eps, _, _ := unstructured.NestedSlice(s.Object, "endpoints")
+			for _, e := range eps {
+				em, isMap := e.(map[string]any)
+				if !isMap {
+					continue
+				}
+				// conditions.ready == nil means "unknown"; the EndpointSlice
+				// API contract says consumers should interpret unknown as
+				// ready, so only an explicit ready=false excludes the entry.
+				if ready, found, _ := unstructured.NestedBool(em, "conditions", "ready"); found && !ready {
+					continue
+				}
+				addrs, _, _ := unstructured.NestedStringSlice(em, "addresses")
+				count += len(addrs)
+			}
+		}
+		if matched {
+			return count, true
+		}
+	}
+	// No slice visible for this Service — legacy core/v1 Endpoints fallback.
+	ep, epErr := src.Get(ctx, snapshot.GVREndpoints, ns, name)
+	if epErr != nil || ep == nil {
+		return 0, false
+	}
+	return readyAddressCount(ep), true
 }
 
-// readyAddressCount counts the total ready addresses across all Endpoints subsets.
+// readyAddressCount counts the total ready addresses across all subsets of a
+// legacy core/v1 Endpoints object (fallback path only — see
+// serviceReadyAddressCount).
 func readyAddressCount(ep *unstructured.Unstructured) int {
 	subsets, _, _ := unstructured.NestedSlice(ep.Object, "subsets")
 	total := 0

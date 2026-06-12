@@ -57,18 +57,28 @@ func LoadLive(kubeconfigPath string) (*Live, error) {
 	return &Live{client: dyn}, nil
 }
 
+// NewLiveFromDynamic wraps an existing dynamic.Interface in a Live source.
+// Primarily a test seam (inject client-go's dynamic fake to exercise
+// List/Get/Watch paths without a cluster); also usable by callers that
+// build their own dynamic client.
+func NewLiveFromDynamic(dyn dynamic.Interface) *Live {
+	return &Live{client: dyn}
+}
+
 func buildConfig(kubeconfigPath string) (*rest.Config, error) {
 	if kubeconfigPath != "" {
-		return clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		return SuppressEndpointsDeprecationWarnings(cfg), err
 	}
 	// Try in-cluster first.
 	if cfg, err := rest.InClusterConfig(); err == nil {
-		return cfg, nil
+		return SuppressEndpointsDeprecationWarnings(cfg), nil
 	}
 	// Fall back to default loading rules ($KUBECONFIG, ~/.kube/config).
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	cc := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{})
-	return cc.ClientConfig()
+	cfg, err := cc.ClientConfig()
+	return SuppressEndpointsDeprecationWarnings(cfg), err
 }
 
 // List returns all objects of the given GVR.

@@ -117,7 +117,23 @@ var (
 
 	// GVREndpoints is the GVR for core/v1 Endpoints objects.
 	// Used by K3sDatastore to check apiserver reachability from within the cluster.
+	//
+	// DEPRECATION NOTE: core/v1 Endpoints is deprecated as of K8s 1.33 in
+	// favor of discovery.k8s.io/v1 EndpointSlice. Every list/get/watch on
+	// this GVR makes the API server attach a deprecation warning header,
+	// which client-go prints by default — at watcher cycle rates that's
+	// pure log spam. New code MUST prefer GVREndpointSlice; remaining
+	// reads exist only as fallbacks for old snapshots / mirroring-disabled
+	// clusters and their warning is suppressed via the WarningHandler
+	// installed by SuppressEndpointsDeprecationWarnings (warnings.go).
 	GVREndpoints = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpoints"}
+
+	// GVREndpointSlice is the GVR for discovery.k8s.io/v1 EndpointSlice
+	// objects — the canonical (non-deprecated) endpoint API since K8s
+	// 1.21. EndpointSlices are per-Service shards; the label
+	// `kubernetes.io/service-name` links a slice back to its Service.
+	// Used by the watcher's trigger source, DNSChainDrift, and KongRoutes.
+	GVREndpointSlice = schema.GroupVersionResource{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"}
 
 	// Traefik IngressRoute CRDs — present on any k3s cluster with the default
 	// Traefik ingress controller. Probes auto-skip when the list call returns a

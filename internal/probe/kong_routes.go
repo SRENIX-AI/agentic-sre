@@ -218,8 +218,7 @@ func kongRefKey(ingNS, ref string) string {
 func serviceHasReadyEndpoint(ctx context.Context, src snapshot.Source, ns, name string) bool {
 	// Try EndpointSlices first (K8s 1.21+ canonical). Fall back to
 	// legacy Endpoints if the slice list is empty.
-	gvrEPSlice := schema.GroupVersionResource{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"}
-	slices, err := src.List(ctx, gvrEPSlice, ns)
+	slices, err := src.List(ctx, snapshot.GVREndpointSlice, ns)
 	if err == nil {
 		for i := range slices.Items {
 			s := &slices.Items[i]
@@ -239,9 +238,10 @@ func serviceHasReadyEndpoint(ctx context.Context, src snapshot.Source, ns, name 
 		// Slices exist but none ready for this Service.
 		return false
 	}
-	// Slices not available — fall back to v1.Endpoints.
-	gvrEP := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpoints"}
-	epList, err := src.List(ctx, gvrEP, ns)
+	// Slices not available — fall back to deprecated v1.Endpoints. The
+	// deprecation warning this list triggers is suppressed by
+	// snapshot.SuppressEndpointsDeprecationWarnings.
+	epList, err := src.List(ctx, snapshot.GVREndpoints, ns)
 	if err != nil {
 		// Can't determine; soft-true to avoid false positives.
 		return true
@@ -271,6 +271,6 @@ func (KongRoutes) GVRs() []schema.GroupVersionResource {
 		snapshot.GVRIngress,
 		kongRoutesPluginGVR,
 		kongRoutesConsumerGVR,
-		{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"},
+		snapshot.GVREndpointSlice,
 	}
 }

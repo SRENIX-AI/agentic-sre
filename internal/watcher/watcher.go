@@ -208,6 +208,14 @@ var watchedGVRs = []schema.GroupVersionResource{
 	// scaledobject). Optional CRD: watcher.watchGVR handles
 	// IsNotFound silently when KEDA isn't installed.
 	snapshot.GVRScaledObject,
+	// EndpointSlice (discovery.k8s.io/v1) — the canonical, non-deprecated
+	// endpoint API. An endpoint-membership change (pod becomes ready /
+	// unready behind a Service) triggers a diagnose cycle directly instead
+	// of relying on the Pod watch to surface it. Deliberately NOT the
+	// deprecated core/v1 Endpoints GVR: watching that emits a
+	// "v1 Endpoints is deprecated in v1.33+" client-go warning on every
+	// (re)connect.
+	snapshot.GVREndpointSlice,
 }
 
 // seenEntry tracks the last-known fingerprint and Slack-post timestamp for one subject.
