@@ -206,6 +206,7 @@ var kindToResource = map[string]string{
 	"Service":         "services",
 	"StorageClass":    "storageclasses",
 	"Endpoints":       "endpoints",
+	"EndpointSlice":   "endpointslices",   // discovery.k8s.io/v1 (canonical endpoint API)
 	"IngressRoute":    "ingressroutes",    // Traefik traefik.io/v1alpha1
 	"IngressRouteTCP": "ingressroutetcps", // Traefik traefik.io/v1alpha1
 	"Middleware":      "middlewares",      // Traefik traefik.io/v1alpha1

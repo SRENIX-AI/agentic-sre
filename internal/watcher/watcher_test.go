@@ -441,3 +441,30 @@ func TestWatchedGVRs_v1_24_0_IncludesKEDAScaledObject(t *testing.T) {
 	}
 	t.Errorf("watchedGVRs missing KEDA ScaledObject (M1 follow-up)")
 }
+
+// TestWatchedGVRs_IncludesEndpointSlice — endpoint-membership changes must
+// trigger a diagnose cycle via the canonical discovery.k8s.io/v1
+// EndpointSlice API.
+func TestWatchedGVRs_IncludesEndpointSlice(t *testing.T) {
+	want := "discovery.k8s.io/v1/endpointslices"
+	for _, gvr := range watchedGVRs {
+		if gvr.Group+"/"+gvr.Version+"/"+gvr.Resource == want {
+			return
+		}
+	}
+	t.Errorf("watchedGVRs missing discovery.k8s.io/v1 EndpointSlice")
+}
+
+// TestWatchedGVRs_NeverLegacyEndpoints — guard: watching the deprecated
+// core/v1 Endpoints API makes the API server attach a
+// "v1 Endpoints is deprecated in v1.33+" warning that client-go prints on
+// every (re)connect. The EndpointSlice entry above provides the same
+// trigger semantics without the log spam; nobody should re-add the legacy
+// GVR here.
+func TestWatchedGVRs_NeverLegacyEndpoints(t *testing.T) {
+	for _, gvr := range watchedGVRs {
+		if gvr.Group == "" && gvr.Version == "v1" && gvr.Resource == "endpoints" {
+			t.Errorf("watchedGVRs must not contain deprecated core/v1 endpoints — use discovery.k8s.io/v1 endpointslices")
+		}
+	}
+}

@@ -179,6 +179,43 @@ func makeEndpoints(ns, name string, readyAddresses int) unstructured.Unstructure
 	return u
 }
 
+// makeEndpointSlice builds a discovery.k8s.io/v1 EndpointSlice shard for
+// svcName (linked via the kubernetes.io/service-name label) carrying
+// readyAddresses ready endpoints and unreadyAddresses explicitly-unready
+// ones. withConditions=false omits the conditions block entirely (the API
+// contract says nil ready == "unknown" == treat as ready).
+func makeEndpointSlice(ns, name, svcName string, readyAddresses, unreadyAddresses int, withConditions bool) unstructured.Unstructured {
+	u := unstructured.Unstructured{}
+	u.SetAPIVersion("discovery.k8s.io/v1")
+	u.SetKind("EndpointSlice")
+	u.SetNamespace(ns)
+	u.SetName(name)
+	u.SetLabels(map[string]string{"kubernetes.io/service-name": svcName})
+	_ = unstructured.SetNestedField(u.Object, "IPv4", "addressType")
+	_ = unstructured.SetNestedSlice(u.Object, []any{
+		map[string]any{"name": "http", "protocol": "TCP", "port": int64(8080)},
+	}, "ports")
+
+	var eps []any
+	for i := 0; i < readyAddresses; i++ {
+		ep := map[string]any{"addresses": []any{"10.0.0.1"}}
+		if withConditions {
+			ep["conditions"] = map[string]any{"ready": true}
+		}
+		eps = append(eps, ep)
+	}
+	for i := 0; i < unreadyAddresses; i++ {
+		eps = append(eps, map[string]any{
+			"addresses":  []any{"10.0.0.99"},
+			"conditions": map[string]any{"ready": false},
+		})
+	}
+	if len(eps) > 0 {
+		_ = unstructured.SetNestedSlice(u.Object, eps, "endpoints")
+	}
+	return u
+}
+
 // makeKongService builds a LoadBalancer Service that mimics a Kong ingress
 // controller so that findIngressControllerLBIP can pick it up.
 func makeKongService(ns, name, lbIP string) unstructured.Unstructured {
@@ -683,6 +720,102 @@ func TestDNSChainDrift_SnapshotModeSkipsCF(t *testing.T) {
 // The new remediation renders a copy-pasteable Ingress YAML skeleton
 // with the actual host substituted, and named template fields the
 // operator fills in (no `<svc-name>` / `<port>` bare tokens).
+
+// ── EndpointSlice-first migration (deprecated core/v1 Endpoints) ─────────────
+
+// TestDNSChainDrift_EndpointSlicePreferred_NoLegacyEndpoints — ready
+// EndpointSlices alone (NO legacy core/v1 Endpoints object in the source)
+// satisfy the endpoint layer. If the analyzer still required the legacy
+// object, the fallback Get would fail and a false service-no-endpoints
+// critical would fire.
+func TestDNSChainDrift_EndpointSlicePreferred_NoLegacyEndpoints(t *testing.T) {
+	const host = "slices.example.com"
+
+	src := newMemSourceDNS()
+	src.add(makeIngress("default", "slices-ing", host, "slices-svc", 80, nil))
+	src.add(makeService("default", "slices-svc"))
+	src.add(makeEndpointSlice("default", "slices-svc-abc12", "slices-svc", 2, 0, true))
+
+	a := DNSChainDrift{Client: nil}
+	diags := a.Run(context.Background(), src)
+	for _, d := range diags {
+		if strings.Contains(d.Subject, "service-no-endpoints") {
+			t.Errorf("ready EndpointSlices must satisfy the endpoint layer without a legacy Endpoints object; got: %+v", d)
+		}
+	}
+}
+
+// TestDNSChainDrift_EndpointSliceZeroReady_NoLegacyFallback — when slices
+// for the Service EXIST but carry zero ready endpoints, the verdict is
+// final: the legacy Endpoints object (even one claiming a ready address)
+// must NOT be consulted. The fallback is only for sources with no slice
+// visibility (old snapshots / mirroring disabled).
+func TestDNSChainDrift_EndpointSliceZeroReady_NoLegacyFallback(t *testing.T) {
+	const host = "zeroready.example.com"
+
+	src := newMemSourceDNS()
+	src.add(makeIngress("default", "zr-ing", host, "zr-svc", 80, nil))
+	src.add(makeService("default", "zr-svc"))
+	src.add(makeEndpointSlice("default", "zr-svc-abc12", "zr-svc", 0, 2, true)) // 2 explicitly-unready
+	src.add(makeEndpoints("default", "zr-svc", 1))                              // stale legacy object claims ready
+
+	a := DNSChainDrift{Client: nil}
+	diags := a.Run(context.Background(), src)
+
+	found := false
+	for _, d := range diags {
+		if strings.Contains(d.Subject, "service-no-endpoints") {
+			found = true
+			if d.Severity != "critical" {
+				t.Errorf("expected severity=critical, got %q", d.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected service-no-endpoints from zero-ready EndpointSlices (legacy object must not override), got: %+v", diags)
+	}
+}
+
+// TestDNSChainDrift_EndpointSliceNilReadyCountsAsReady — the EndpointSlice
+// API contract: conditions.ready == nil means "unknown" and consumers
+// should treat it as ready.
+func TestDNSChainDrift_EndpointSliceNilReadyCountsAsReady(t *testing.T) {
+	const host = "nilready.example.com"
+
+	src := newMemSourceDNS()
+	src.add(makeIngress("default", "nr-ing", host, "nr-svc", 80, nil))
+	src.add(makeService("default", "nr-svc"))
+	src.add(makeEndpointSlice("default", "nr-svc-abc12", "nr-svc", 1, 0, false)) // no conditions block
+
+	a := DNSChainDrift{Client: nil}
+	diags := a.Run(context.Background(), src)
+	for _, d := range diags {
+		if strings.Contains(d.Subject, "service-no-endpoints") {
+			t.Errorf("nil ready condition must count as ready, got: %+v", d)
+		}
+	}
+}
+
+// TestDNSChainDrift_LegacyEndpointsFallback_WhenNoSlices — sources without
+// EndpointSlice visibility (snapshots captured before the EndpointSlice
+// migration, clusters without the mirroring controller) still resolve the
+// endpoint layer via the legacy core/v1 Endpoints object.
+func TestDNSChainDrift_LegacyEndpointsFallback_WhenNoSlices(t *testing.T) {
+	const host = "legacy.example.com"
+
+	src := newMemSourceDNS()
+	src.add(makeIngress("default", "legacy-ing", host, "legacy-svc", 80, nil))
+	src.add(makeService("default", "legacy-svc"))
+	src.add(makeEndpoints("default", "legacy-svc", 1)) // legacy only, no slices
+
+	a := DNSChainDrift{Client: nil}
+	diags := a.Run(context.Background(), src)
+	for _, d := range diags {
+		if strings.Contains(d.Subject, "service-no-endpoints") {
+			t.Errorf("legacy Endpoints fallback must keep old snapshots working, got: %+v", d)
+		}
+	}
+}
 
 func TestRenderMissingIngressRemediation_NoBareTokens(t *testing.T) {
 	rem := renderMissingIngressRemediation("foo.example.com")

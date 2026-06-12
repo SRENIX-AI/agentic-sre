@@ -57,14 +57,16 @@ import (
 // to construct a dynamic.Interface.
 func buildKubeConfigForSilence(kubeconfigPath string) (*rest.Config, error) {
 	if kubeconfigPath != "" {
-		return clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		return snapshot.SuppressEndpointsDeprecationWarnings(cfg), err
 	}
 	if c, err := rest.InClusterConfig(); err == nil {
-		return c, nil
+		return snapshot.SuppressEndpointsDeprecationWarnings(c), nil
 	}
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	cc := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{})
-	return cc.ClientConfig()
+	cfg, err := cc.ClientConfig()
+	return snapshot.SuppressEndpointsDeprecationWarnings(cfg), err
 }
 
 // version is overridden at build time via -ldflags "-X main.version=v0.1.0".
