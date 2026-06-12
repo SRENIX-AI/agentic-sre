@@ -13,6 +13,17 @@
 //     the open source, so the chain format can be verified before (and
 //     independently of) any paid component.
 //
+// Canonical-form contract (chain hashing): entry hashes are sha256 over
+// the event's canonical JSON, where the canonical form is exactly Go
+// encoding/json.Marshal output — struct fields in declaration order,
+// map keys sorted lexicographically, HTML-escaping ON (the bytes <, >,
+// and & are encoded as their backslash-u escapes), and timestamps in
+// RFC3339Nano. Production chains are already written in this form, so
+// it is frozen for cross-version verifiability. External verifiers MUST
+// replicate these rules byte-for-byte; see the golden-bytes contract
+// test TestCanonicalJSON_FormatContract and the canonicalJSON doc in
+// hash_chain.go.
+//
 // What stays paid: the richer SINKS the chain can wrap — the JSONL
 // chained-file sink with rotation, Loki, and OTLP/SIEM — ship in the
 // CHA-com binary and register via the registry without removing the

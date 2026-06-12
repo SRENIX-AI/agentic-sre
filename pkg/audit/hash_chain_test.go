@@ -8,7 +8,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -240,16 +242,16 @@ func TestChainedSink_PreexistingTimestampPreserved(t *testing.T) {
 }
 
 // With a fixed clock and identical inputs, two independent sinks produce
-// byte-identical chains — the hash is fully deterministic.
+// byte-identical chains — the hash is fully deterministic. The clock is
+// injected per-sink (ChainedSink.now), not via package-level state, so
+// this test cannot interfere with parallel tests.
 func TestChainedSink_DeterministicWithFixedClock(t *testing.T) {
 	fixed := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
-	restore := nowFunc
-	nowFunc = func() time.Time { return fixed }
-	defer func() { nowFunc = restore }()
 
 	run := func() []ai.AuditEvent {
 		mem := &memorySink{}
 		s := NewChainedSink(mem)
+		s.now = func() time.Time { return fixed }
 		writeN(t, s, 3)
 		return mem.snapshot()
 	}
@@ -349,6 +351,50 @@ func TestCanonicalJSON_NestedDetailsStability(t *testing.T) {
 	}
 	if !bytes.Equal(c1, c2) {
 		t.Errorf("nested canonical bytes differ:\n%s\n%s", c1, c2)
+	}
+}
+
+// TestCanonicalJSON_FormatContract pins the EXACT canonical bytes — the
+// frozen cross-version contract that external verifiers (and the
+// production CHA-com binaries already writing chains in this form) must
+// replicate byte-for-byte: struct fields in declaration order, map keys
+// sorted, HTML-escaping ON (<, >, & as backslash-u escapes), RFC3339Nano
+// timestamps. If this test fails, the canonical format changed and every
+// existing chain entry containing <, >, or & would fail verification
+// across the version boundary. Do NOT update the golden string to make
+// it pass — revert the format change instead.
+func TestCanonicalJSON_FormatContract(t *testing.T) {
+	e := ai.AuditEvent{
+		Type:  "ai.contract",
+		Actor: "a<b>&c",
+		Details: map[string]any{
+			"zeta":  "<script>",
+			"alpha": "x&y",
+			"html":  `<a href="u">&amp;</a>`,
+		},
+	}
+	const golden = `{"type":"ai.contract","correlation_id":"","tier":"","actor":"a\u003cb\u003e\u0026c","details":{"alpha":"x\u0026y","html":"\u003ca href=\"u\"\u003e\u0026amp;\u003c/a\u003e","zeta":"\u003cscript\u003e"}}`
+	got, err := canonicalJSON(e)
+	if err != nil {
+		t.Fatalf("canonicalJSON: %v", err)
+	}
+	if string(got) != golden {
+		t.Errorf("canonical format changed — this BREAKS verification of existing production chains:\n got: %s\nwant: %s", got, golden)
+	}
+
+	// Cross-verifiability spot check: the canonical bytes are exactly
+	// plain json.Marshal output — the code path production binaries have
+	// always hashed — so an event containing <, >, & hashes identically
+	// on the old and new code paths.
+	old, err := json.Marshal(e)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !bytes.Equal(got, old) {
+		t.Errorf("canonicalJSON diverged from json.Marshal:\n new: %s\n old: %s", got, old)
+	}
+	if sha256.Sum256(got) != sha256.Sum256(old) {
+		t.Error("old-path and new-path hashes differ for an event containing <, >, &")
 	}
 }
 
@@ -460,6 +506,39 @@ func TestVerifyChainWithCheckpoints_DetectsTailTruncation(t *testing.T) {
 	// ...but the checkpoint-aware verifier reports the tail as unanchored.
 	if VerifyChainWithCheckpoints(cut).TailAnchored {
 		t.Error("truncating the tail to a data event must leave it UNanchored")
+	}
+}
+
+// A broken chain reports BrokenIndex AND LastCheckpointIndex together:
+// the checkpoint scan covers the verified prefix (entries before the
+// break), so the caller learns the last trustworthy anchor even when
+// verification fails. Checkpoint at index 1, tamper at index 3 →
+// BrokenIndex=3, LastCheckpointIndex=1.
+func TestVerifyChainWithCheckpoints_BrokenChainReportsLastCheckpoint(t *testing.T) {
+	mem := &memorySink{}
+	signer, _ := newTestSigner(t)
+	s := NewChainedSinkResuming(mem, "", ChainOptions{Signer: signer, CheckpointEvery: 1})
+	writeN(t, s, 2) // cadence=1 → [data0, checkpoint1, data2, checkpoint3]
+
+	events := mem.snapshot()
+	if len(events) != 4 {
+		t.Fatalf("got %d events, want 4 (data, checkpoint, data, checkpoint)", len(events))
+	}
+	if events[1].Type != CheckpointType || events[3].Type != CheckpointType {
+		t.Fatalf("expected checkpoints at indexes 1 and 3; got types %q, %q", events[1].Type, events[3].Type)
+	}
+
+	events[3].Actor = "attacker" // tamper at index 3
+
+	res := VerifyChainWithCheckpoints(events)
+	if res.BrokenIndex != 3 {
+		t.Errorf("BrokenIndex=%d, want 3", res.BrokenIndex)
+	}
+	if res.LastCheckpointIndex != 1 {
+		t.Errorf("LastCheckpointIndex=%d, want 1 (the checkpoint at the break is untrustworthy and must not count)", res.LastCheckpointIndex)
+	}
+	if res.TailAnchored {
+		t.Error("a broken chain must not report an anchored tail")
 	}
 }
 

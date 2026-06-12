@@ -49,10 +49,6 @@ const CheckpointType = "audit.checkpoint"
 // checkpoints when ChainOptions.CheckpointEvery is unset.
 const defaultCheckpointEvery = 100
 
-// nowFunc is the clock seam. Overridable in tests so timestamps are
-// deterministic; production uses time.Now().
-var nowFunc = time.Now
-
 // CheckpointSigner signs the current chain head hash so the tail of the
 // log is cryptographically anchored. Callers adapt their signer (for
 // example an Ed25519 key) to this narrow shape; passing no signer keeps
@@ -83,6 +79,11 @@ type ChainOptions struct {
 type ChainedSink struct {
 	inner ai.AuditSink
 
+	// now is the clock seam, defaulting to time.Now. It is an instance
+	// field (not package-level state) so tests can inject a fixed clock
+	// on their own sink without mutating globals — safe under t.Parallel.
+	now func() time.Time
+
 	mu       sync.Mutex
 	lastHash string // hex(sha256) of the last successfully chained event
 
@@ -104,7 +105,7 @@ func NewChainedSink(inner ai.AuditSink) *ChainedSink {
 	if inner == nil {
 		inner = ai.NoOpAuditSink{}
 	}
-	return &ChainedSink{inner: inner}
+	return &ChainedSink{inner: inner, now: time.Now}
 }
 
 // NewChainedSinkResuming constructs a ChainedSink whose chain continues
@@ -123,6 +124,7 @@ func NewChainedSinkResuming(inner ai.AuditSink, resumeHash string, opts ChainOpt
 	}
 	return &ChainedSink{
 		inner:           inner,
+		now:             time.Now,
 		lastHash:        resumeHash,
 		signer:          opts.Signer,
 		checkpointEvery: every,
@@ -139,22 +141,37 @@ func (s *ChainedSink) Write(ctx context.Context, e ai.AuditEvent) error {
 	if e.Details == nil {
 		e.Details = map[string]any{}
 	}
-	// Bind wall-clock time INSIDE the hashed payload so identical events
-	// do not hash identically and time can't be edited without breaking
-	// the chain.
-	stampEntryTime(&e)
+	return s.chainEntryLocked(ctx, e, true)
+}
+
+// chainEntryLocked is the single chain-entry procedure shared by data
+// events (Write) and checkpoint entries (writeCheckpointLocked):
+//
+//  1. bind wall-clock time INSIDE the hashed payload (so identical
+//     events do not hash identically and time can't be edited without
+//     breaking the chain)
+//  2. embed prev_hash = current head
+//  3. canonicalize (the verifier reproduces these bytes exactly)
+//  4. sha256 the canonical bytes
+//  5. embed entry_hash so consumers see both the chain link and the
+//     self-hash without recomputing
+//  6. delegate to the inner sink — an error does NOT advance the chain
+//  7. advance the head
+//
+// countForCadence is true for data events (they advance the periodic
+// checkpoint counter, possibly emitting a checkpoint) and false for the
+// checkpoint entry itself (it resets the counter and must NOT recurse
+// into the cadence). Caller MUST hold s.mu. e.Details must be non-nil.
+func (s *ChainedSink) chainEntryLocked(ctx context.Context, e ai.AuditEvent, countForCadence bool) error {
+	stampEntryTime(&e, s.now)
 	e.Details["prev_hash"] = s.lastHash
 
-	// Hash the canonical JSON of the event (with prev_hash already
-	// embedded). The verifier reproduces this exactly.
 	canon, err := canonicalJSON(e)
 	if err != nil {
 		return err
 	}
 	sum := sha256.Sum256(canon)
 	newHash := hex.EncodeToString(sum[:])
-	// Embed the new hash in the event so consumers see both the chain
-	// link and the self-hash without recomputing.
 	e.Details["entry_hash"] = newHash
 
 	if err := s.inner.Write(ctx, e); err != nil {
@@ -162,14 +179,18 @@ func (s *ChainedSink) Write(ctx context.Context, e ai.AuditEvent) error {
 	}
 	s.lastHash = newHash
 
-	// Periodic checkpoint cadence. Only data events advance the counter;
-	// the checkpoint write itself goes through writeCheckpointLocked
-	// which does NOT recurse here.
-	if s.checkpointEvery > 0 {
-		s.sinceCheckpoint++
-		if s.sinceCheckpoint >= s.checkpointEvery {
-			s.writeCheckpointLocked(ctx)
+	if countForCadence {
+		// Periodic checkpoint cadence. Only data events advance the
+		// counter; the checkpoint write itself passes false here and
+		// does NOT recurse.
+		if s.checkpointEvery > 0 {
+			s.sinceCheckpoint++
+			if s.sinceCheckpoint >= s.checkpointEvery {
+				s.writeCheckpointLocked(ctx)
+			}
 		}
+	} else {
+		s.sinceCheckpoint = 0
 	}
 	return nil
 }
@@ -216,22 +237,12 @@ func (s *ChainedSink) writeCheckpointLocked(ctx context.Context) {
 		s.loggedNoSigner = true
 	}
 
-	// Chain the checkpoint exactly like a data event (inline rather than
-	// recursing through Write, which would re-enter the cadence counter).
-	stampEntryTime(&cp)
-	cp.Details["prev_hash"] = s.lastHash
-	canon, err := canonicalJSON(cp)
-	if err != nil {
-		return
-	}
-	sum := sha256.Sum256(canon)
-	newHash := hex.EncodeToString(sum[:])
-	cp.Details["entry_hash"] = newHash
-	if err := s.inner.Write(ctx, cp); err != nil {
-		return
-	}
-	s.lastHash = newHash
-	s.sinceCheckpoint = 0
+	// Chain the checkpoint exactly like a data event, but with
+	// countForCadence=false so it resets the cadence counter instead of
+	// re-entering it. Best-effort: the error is intentionally dropped
+	// (a failed checkpoint write does not advance the chain and must not
+	// abort the audit stream).
+	_ = s.chainEntryLocked(ctx, cp, false)
 }
 
 // LastHash returns the most recently chained hash. Useful for tests,
@@ -313,12 +324,22 @@ func VerifyChainWithCheckpoints(events []ai.AuditEvent) ChainVerification {
 	res := ChainVerification{BrokenIndex: -1, LastCheckpointIndex: -1}
 	if idx, _ := VerifyChain(events); idx >= 0 {
 		res.BrokenIndex = idx
-		return res
 	}
-	for i, e := range events {
-		if e.Type == CheckpointType {
+	// Report BrokenIndex AND LastCheckpointIndex together: scan
+	// checkpoints over the verified prefix only (entries at or after a
+	// break are untrustworthy), so a caller of a broken chain still
+	// learns the last good anchor.
+	limit := len(events)
+	if res.BrokenIndex >= 0 {
+		limit = res.BrokenIndex
+	}
+	for i := 0; i < limit; i++ {
+		if events[i].Type == CheckpointType {
 			res.LastCheckpointIndex = i
 		}
+	}
+	if res.BrokenIndex >= 0 {
+		return res // a broken chain cannot have an anchored tail
 	}
 	if res.LastCheckpointIndex < 0 {
 		return res // no checkpoint at all → tail unanchored
@@ -344,23 +365,38 @@ func isSignedCheckpoint(e ai.AuditEvent) bool {
 	return sig != ""
 }
 
-// stampEntryTime writes the RFC3339Nano wall-clock time into e.Details
-// under EntryTimeKey, unless one is already present (so a replayed /
-// re-chained entry keeps its original time). Caller guarantees Details
-// is non-nil.
-func stampEntryTime(e *ai.AuditEvent) {
+// stampEntryTime writes the RFC3339Nano wall-clock time (from now) into
+// e.Details under EntryTimeKey, unless one is already present (so a
+// replayed / re-chained entry keeps its original time). Caller
+// guarantees Details is non-nil.
+func stampEntryTime(e *ai.AuditEvent, now func() time.Time) {
 	if _, ok := e.Details[EntryTimeKey]; ok {
 		return
 	}
-	e.Details[EntryTimeKey] = nowFunc().UTC().Format(time.RFC3339Nano)
+	e.Details[EntryTimeKey] = now().UTC().Format(time.RFC3339Nano)
 }
 
-// canonicalJSON marshals e for stable hashes. encoding/json sorts map keys
-// alphabetically, so json.Marshal of AuditEvent — whose Details field is
-// map[string]any — is deterministic; struct fields are always marshaled in
-// declaration order. This is tamper-evidence, not cryptographic
-// authentication; hash stability only requires ordering to be
-// deterministic within one process/runtime.
+// canonicalJSON marshals e for stable hashes.
+//
+// CANONICAL-FORM CONTRACT: the canonical form is exactly Go
+// encoding/json.Marshal output — struct fields in declaration order,
+// map keys sorted lexicographically, HTML-escaping ON (the bytes <, >,
+// and & are encoded as \u003c, \u003e, and \u0026), timestamps
+// RFC3339Nano. External
+// verifiers MUST replicate these rules byte-for-byte; see
+// TestCanonicalJSON_FormatContract, which pins the exact golden bytes.
+//
+// Hash stability must hold ACROSS restarts and independent verifier
+// processes, not just within one process — Go's encoding/json satisfies
+// this (declaration-order struct fields and sorted map keys are part of
+// its documented behavior).
+//
+// COMPATIBILITY: production chains (CHA-com 1.21.0 binaries) are
+// already written in this exact form. Do NOT "clean up" the encoding —
+// e.g. switching to json.Encoder with SetEscapeHTML(false) — because
+// verifiers recompute hashes from the canonical bytes, so any format
+// change makes every existing entry containing <, >, or & fail
+// verification across the version boundary.
 func canonicalJSON(e ai.AuditEvent) ([]byte, error) {
 	return json.Marshal(e)
 }
