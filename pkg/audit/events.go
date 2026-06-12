@@ -1,10 +1,30 @@
 // Copyright 2026 Cluster Health Autopilot contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package audit provides default implementations of the ai.AuditSink
-// interface. The OSS engine ships these defaults; the paid CHA-com
-// binary can register richer sinks (Loki, OTLP/SIEM) via the registry
-// without removing the default.
+// Package audit provides the audit-trail building blocks that ship in
+// the open-source engine:
+//
+//   - EventsSink — the default ai.AuditSink, writing Kubernetes Events
+//     (no extra infrastructure required).
+//   - ChainedSink / VerifyChain / VerifyChainWithCheckpoints — the
+//     tamper-evident hash-chain primitive: canonical-JSON hashing,
+//     prev_hash/entry_hash linking, chain resumption across restarts,
+//     and signed-checkpoint tail anchoring. Fully auditable here, in
+//     the open source, so the chain format can be verified before (and
+//     independently of) any paid component.
+//
+// What stays paid: the richer SINKS the chain can wrap — the JSONL
+// chained-file sink with rotation, Loki, and OTLP/SIEM — ship in the
+// CHA-com binary and register via the registry without removing the
+// defaults.
+//
+// Adapter path: the chain primitive here operates directly on
+// ai.AuditEvent / ai.AuditSink (the same types CHA-com's sinks use), so
+// CHA-com adapts by importing this package and constructing its
+// file-backed chains via NewChainedSinkResuming(inner, resumeHash,
+// ChainOptions{...}) — its store reads the resume hash from the last
+// persisted entry's "entry_hash" Details field and calls WriteCheckpoint
+// on close to anchor the tail.
 package audit
 
 import (
