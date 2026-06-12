@@ -5,6 +5,7 @@ package snapshot
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -17,6 +18,15 @@ type recordingWarningHandler struct {
 }
 
 func (r *recordingWarningHandler) HandleWarningHeader(_ int, _ string, text string) {
+	r.got = append(r.got, text)
+}
+
+// recordingWarningHandlerWithContext is the context-aware twin.
+type recordingWarningHandlerWithContext struct {
+	got []string
+}
+
+func (r *recordingWarningHandlerWithContext) HandleWarningHeaderWithContext(_ context.Context, _ int, _ string, text string) {
 	r.got = append(r.got, text)
 }
 
@@ -98,17 +108,68 @@ func TestSuppressEndpointsDeprecationWarnings_NilConfigNoop(t *testing.T) {
 	}
 }
 
-// TestNewLiveSource_RespectsCallerWarningHandler — NewLiveSource only
-// installs the filter when the caller hasn't wired any handler, and never
-// mutates the caller's config either way.
-func TestNewLiveSource_RespectsCallerWarningHandler(t *testing.T) {
+// TestSuppressEndpointsDeprecationWarnings_WrapsCallerWarningHandler — the
+// function is self-composable: a caller-installed WarningHandler becomes the
+// filter's `next` (not replaced), so it still receives every non-suppressed
+// warning while the Endpoints deprecation line is dropped.
+func TestSuppressEndpointsDeprecationWarnings_WrapsCallerWarningHandler(t *testing.T) {
+	rec := &recordingWarningHandler{}
+	cfg := &rest.Config{WarningHandler: rec}
+	SuppressEndpointsDeprecationWarnings(cfg)
+
+	other := "batch/v1beta1 CronJob is deprecated in v1.21+, unavailable in v1.25+; use batch/v1 CronJob"
+	cfg.WarningHandler.HandleWarningHeader(299, "-", endpointsWarning)
+	cfg.WarningHandler.HandleWarningHeader(299, "-", other)
+
+	if len(rec.got) != 1 || rec.got[0] != other {
+		t.Errorf("caller's handler must receive exactly the non-suppressed warnings; got %v", rec.got)
+	}
+}
+
+// TestSuppressEndpointsDeprecationWarnings_WrapsCallerWarningHandlerWithContext —
+// same contract for the context-aware field, which client-go prefers when
+// both are set: the caller's WarningHandlerWithContext is wrapped as `next`.
+func TestSuppressEndpointsDeprecationWarnings_WrapsCallerWarningHandlerWithContext(t *testing.T) {
+	rec := &recordingWarningHandlerWithContext{}
+	cfg := &rest.Config{WarningHandlerWithContext: rec}
+	SuppressEndpointsDeprecationWarnings(cfg)
+
+	other := "batch/v1beta1 CronJob is deprecated in v1.21+, unavailable in v1.25+; use batch/v1 CronJob"
+	ctx := context.Background()
+	cfg.WarningHandlerWithContext.HandleWarningHeaderWithContext(ctx, 299, "-", endpointsWarning)
+	cfg.WarningHandlerWithContext.HandleWarningHeaderWithContext(ctx, 299, "-", other)
+
+	if len(rec.got) != 1 || rec.got[0] != other {
+		t.Errorf("caller's context handler must receive exactly the non-suppressed warnings; got %v", rec.got)
+	}
+	if cfg.WarningHandler != nil {
+		t.Errorf("legacy WarningHandler field must stay nil when wrapping WarningHandlerWithContext (client-go precedence)")
+	}
+}
+
+// TestNewLiveSource_WrapsCallerHandlerOnCopy — wrapping is now the contract:
+// NewLiveSource applies the filter to an internal COPY of the config, so the
+// caller's config is never mutated, and the caller's handler (wrapped inside
+// the copy) still receives non-suppressed warnings through the filter.
+func TestNewLiveSource_WrapsCallerHandlerOnCopy(t *testing.T) {
 	rec := &recordingWarningHandler{}
 	cfg := &rest.Config{Host: "https://127.0.0.1:6443", WarningHandler: rec}
 	if _, err := NewLiveSource(cfg); err != nil {
 		t.Fatalf("NewLiveSource: %v", err)
 	}
 	if cfg.WarningHandler != rest.WarningHandler(rec) {
-		t.Errorf("caller-provided WarningHandler was replaced")
+		t.Errorf("NewLiveSource must not mutate the caller's config (wrapping happens on an internal copy)")
+	}
+
+	// The wrapped handler the internal copy carries forwards non-suppressed
+	// warnings to the caller's handler — pin that via the same composition
+	// SuppressEndpointsDeprecationWarnings(rest.CopyConfig(cfg)) builds.
+	wrapped := SuppressEndpointsDeprecationWarnings(rest.CopyConfig(cfg))
+	other := "batch/v1beta1 CronJob is deprecated in v1.21+, unavailable in v1.25+; use batch/v1 CronJob"
+	wrapped.WarningHandler.HandleWarningHeader(299, "-", endpointsWarning)
+	wrapped.WarningHandler.HandleWarningHeader(299, "-", other)
+	if len(rec.got) != 1 || rec.got[0] != other {
+		t.Errorf("caller's handler must still receive non-suppressed warnings through the wrapper; got %v", rec.got)
 	}
 
 	plain := &rest.Config{Host: "https://127.0.0.1:6443"}

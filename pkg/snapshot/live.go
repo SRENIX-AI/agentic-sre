@@ -36,14 +36,14 @@ type LiveSource struct {
 // Useful for paid-tier binaries that build their own client (e.g. for
 // custom transport / TLS wiring).
 //
-// When the caller hasn't installed any warning handler, the
-// Endpoints-deprecation filter (SuppressEndpointsDeprecationWarnings) is
-// applied to a COPY of cfg so the deliberate legacy core/v1 Endpoints
-// fallback reads don't print one deprecation line per call. A
-// caller-provided WarningHandler / WarningHandlerWithContext is always
-// respected as-is.
+// The Endpoints-deprecation filter (SuppressEndpointsDeprecationWarnings)
+// is applied to a COPY of cfg so the deliberate legacy core/v1 Endpoints
+// fallback reads don't print one deprecation line per call, and the
+// caller's config is never mutated. A caller-provided WarningHandler /
+// WarningHandlerWithContext is wrapped, not replaced: it still receives
+// every non-suppressed warning through the filter.
 func NewLiveSource(cfg *rest.Config) (*LiveSource, error) {
-	if cfg != nil && cfg.WarningHandler == nil && cfg.WarningHandlerWithContext == nil {
+	if cfg != nil {
 		cfg = SuppressEndpointsDeprecationWarnings(rest.CopyConfig(cfg))
 	}
 	dyn, err := dynamic.NewForConfig(cfg)

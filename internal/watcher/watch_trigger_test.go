@@ -47,6 +47,10 @@ func TestWatchGVR_EndpointSliceEventTriggersSignal(t *testing.T) {
 				"namespace": "default",
 				"labels":    map[string]any{"kubernetes.io/service-name": "api-svc"},
 			},
+			"addressType": "IPv4",
+			"ports": []any{
+				map[string]any{"name": "http", "protocol": "TCP", "port": int64(8080)},
+			},
 		}}
 	}
 

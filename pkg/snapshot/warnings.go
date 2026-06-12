@@ -4,6 +4,7 @@
 package snapshot
 
 import (
+	"context"
 	"os"
 	"strings"
 
@@ -39,11 +40,29 @@ func (h suppressingWarningHandler) HandleWarningHeader(code int, agent string, t
 	}
 }
 
-// newSuppressingWarningHandler builds the production handler: Endpoints
-// deprecation warnings are dropped entirely; all other server warnings pass
-// through to a DEDUPLICATING stderr writer (each unique warning prints once
-// per process instead of once per call). The next seam exists so tests can
-// inject a recording handler.
+// suppressingWarningHandlerWithContext is the context-aware twin of
+// suppressingWarningHandler, wrapping a caller-installed
+// rest.WarningHandlerWithContext (which client-go prefers over the legacy
+// WarningHandler field when both are set).
+type suppressingWarningHandlerWithContext struct {
+	next rest.WarningHandlerWithContext
+}
+
+// HandleWarningHeaderWithContext implements rest.WarningHandlerWithContext.
+func (h suppressingWarningHandlerWithContext) HandleWarningHeaderWithContext(ctx context.Context, code int, agent string, text string) {
+	if strings.Contains(text, endpointsDeprecationFragment) {
+		return
+	}
+	if h.next != nil {
+		h.next.HandleWarningHeaderWithContext(ctx, code, agent, text)
+	}
+}
+
+// newSuppressingWarningHandler builds the warning filter around next:
+// Endpoints deprecation warnings are dropped entirely; all other server
+// warnings pass through to next. When next is nil the production default is
+// used — a DEDUPLICATING stderr writer (each unique warning prints once per
+// process instead of once per call).
 func newSuppressingWarningHandler(next rest.WarningHandler) rest.WarningHandler {
 	if next == nil {
 		next = rest.NewWarningWriter(os.Stderr, rest.WarningWriterOptions{Deduplicate: true})
@@ -53,13 +72,27 @@ func newSuppressingWarningHandler(next rest.WarningHandler) rest.WarningHandler 
 
 // SuppressEndpointsDeprecationWarnings installs the Endpoints-deprecation
 // warning filter on cfg (see suppressingWarningHandler): the core/v1
-// Endpoints deprecation line is dropped, every other API-server warning is
-// printed to stderr once per unique message. Returns cfg for call-site
-// chaining. Safe on a nil config (no-op).
+// Endpoints deprecation line is dropped, every other API-server warning
+// passes through. The function is self-composable — a caller-installed
+// handler is wrapped, not replaced:
+//
+//   - cfg.WarningHandlerWithContext set → it becomes the filter's `next`
+//     (client-go prefers this field, so it is the one that must be wrapped);
+//   - else cfg.WarningHandler set → it becomes the filter's `next`;
+//   - neither set → non-suppressed warnings go to a deduplicating stderr
+//     writer (once per unique message per process).
+//
+// Returns cfg for call-site chaining. Safe on a nil config (no-op). Note cfg
+// itself is mutated; callers that must not touch a shared config should pass
+// rest.CopyConfig(cfg) (as NewLiveSource does).
 func SuppressEndpointsDeprecationWarnings(cfg *rest.Config) *rest.Config {
 	if cfg == nil {
 		return nil
 	}
-	cfg.WarningHandler = newSuppressingWarningHandler(nil)
+	if cfg.WarningHandlerWithContext != nil {
+		cfg.WarningHandlerWithContext = suppressingWarningHandlerWithContext{next: cfg.WarningHandlerWithContext}
+		return cfg
+	}
+	cfg.WarningHandler = newSuppressingWarningHandler(cfg.WarningHandler)
 	return cfg
 }

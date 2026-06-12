@@ -191,6 +191,10 @@ func makeEndpointSlice(ns, name, svcName string, readyAddresses, unreadyAddresse
 	u.SetNamespace(ns)
 	u.SetName(name)
 	u.SetLabels(map[string]string{"kubernetes.io/service-name": svcName})
+	_ = unstructured.SetNestedField(u.Object, "IPv4", "addressType")
+	_ = unstructured.SetNestedSlice(u.Object, []any{
+		map[string]any{"name": "http", "protocol": "TCP", "port": int64(8080)},
+	}, "ports")
 
 	var eps []any
 	for i := 0; i < readyAddresses; i++ {
