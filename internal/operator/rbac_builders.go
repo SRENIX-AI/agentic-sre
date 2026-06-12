@@ -121,7 +121,7 @@ func readerPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"pods", "nodes", "persistentvolumeclaims", "persistentvolumes", "events", "namespaces", "services", "endpoints", "resourcequotas"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
-		// DisruptionDrift (P1.2, v1.25.2) — PDB blocked-evictions signal.
+		// DisruptionDrift (P1.2, v1.26.0) — PDB blocked-evictions signal.
 		// resourcequotas (saturated-quota signal) rides the core rule
 		// above. Without these grants the analyzer's list calls return
 		// `forbidden` and its soft-fail made it silently dead on every

@@ -86,7 +86,18 @@ spec:
         kinds: ["Order"]
   parameters:
     protectedNamespaces:
-      {{- range .Values.gatekeeper.constraints.protectedNamespaces }}
+      {{- /* protectedNamespaces.extra is appended so the admission
+             layer enforces the SAME widened boundary the binary's
+             fixer guard + AI validator read from
+             CHA_PROTECTED_NAMESPACES_EXTRA. Append-only: the
+             gatekeeper list keeps its compiled-floor mirror.
+             Each entry is trimmed so " prod-payments" in values
+             matches across all layers (binary + gatekeeper). */}}
+      {{- $extras := list }}
+      {{- range (default list (.Values.protectedNamespaces).extra) }}
+      {{- $extras = append $extras (trim .) }}
+      {{- end }}
+      {{- range uniq (concat .Values.gatekeeper.constraints.protectedNamespaces $extras) }}
       - {{ . | quote }}
       {{- end }}
     allowedUsernames:
