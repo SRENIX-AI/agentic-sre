@@ -90,8 +90,14 @@ spec:
              layer enforces the SAME widened boundary the binary's
              fixer guard + AI validator read from
              CHA_PROTECTED_NAMESPACES_EXTRA. Append-only: the
-             gatekeeper list keeps its compiled-floor mirror. */}}
-      {{- range uniq (concat .Values.gatekeeper.constraints.protectedNamespaces (default list (.Values.protectedNamespaces).extra)) }}
+             gatekeeper list keeps its compiled-floor mirror.
+             Each entry is trimmed so " prod-payments" in values
+             matches across all layers (binary + gatekeeper). */}}
+      {{- $extras := list }}
+      {{- range (default list (.Values.protectedNamespaces).extra) }}
+      {{- $extras = append $extras (trim .) }}
+      {{- end }}
+      {{- range uniq (concat .Values.gatekeeper.constraints.protectedNamespaces $extras) }}
       - {{ . | quote }}
       {{- end }}
     allowedUsernames:

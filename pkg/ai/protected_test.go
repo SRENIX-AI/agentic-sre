@@ -129,7 +129,6 @@ func TestIsProtectedNamespace_LazyEnvLoad(t *testing.T) {
 	extraLoaded = false
 	extraProtected = nil
 	extraMu.Unlock()
-	t.Cleanup(func() { SetExtraProtectedNamespaces() })
 
 	if !IsProtectedNamespace("lazy-ns") {
 		t.Error("lazy env load: IsProtectedNamespace(lazy-ns) = false; want true")

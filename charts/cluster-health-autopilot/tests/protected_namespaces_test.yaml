@@ -1,9 +1,10 @@
-suite: protectedNamespaces.extra append-only extension (v1.25.2)
+suite: protectedNamespaces.extra append-only extension (v1.26.0)
 templates:
   - templates/watcher-deployment.yaml
   - templates/cronjob-diagnose.yaml
   - templates/cronjob-remediate.yaml
   - templates/aiwatch-deployment.yaml
+  - templates/gatekeeper-constraint.yaml
 tests:
   - it: no CHA_PROTECTED_NAMESPACES_EXTRA when extra is empty (default)
     template: templates/watcher-deployment.yaml
@@ -69,3 +70,26 @@ tests:
           content:
             name: CHA_PROTECTED_NAMESPACES_EXTRA
             value: "prod-payments"
+
+  - it: gatekeeper constraint trims whitespace in extra entries
+    template: templates/gatekeeper-constraint.yaml
+    documentIndex: 1
+    set:
+      approval.enabled: true
+      gatekeeper.install: true
+      protectedNamespaces.extra:
+        - " prod-payments"
+        - "tenant-a "
+    asserts:
+      - contains:
+          path: spec.parameters.protectedNamespaces
+          content: "prod-payments"
+      - contains:
+          path: spec.parameters.protectedNamespaces
+          content: "tenant-a"
+      - notContains:
+          path: spec.parameters.protectedNamespaces
+          content: " prod-payments"
+      - notContains:
+          path: spec.parameters.protectedNamespaces
+          content: "tenant-a "

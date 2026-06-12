@@ -10,7 +10,7 @@ import (
 )
 
 // P1.2 — the DisruptionDrift analyzer lists policy/v1
-// poddisruptionbudgets and core resourcequotas. Until v1.25.2 NO RBAC
+// poddisruptionbudgets and core resourcequotas. Until v1.26.0 NO RBAC
 // surface granted either resource, so the analyzer's soft-fail
 // (`if err != nil { return nil }`) made it silently dead on every
 // real cluster (fake clients don't enforce RBAC, so unit tests never

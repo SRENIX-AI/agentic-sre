@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -681,6 +682,9 @@ the post-fix cluster state.`,
 				WebhookListen:          webhookListen,
 				WebhookSourceSpec:      webhookSourceSpec,
 				HealthListen:           healthListen,
+			}
+			if extras := ai.ExtraProtectedNamespaces(); len(extras) > 0 {
+				log.Printf("protected namespaces extended: +%v (floor always enforced)", extras)
 			}
 			w := watcher.New(lv, reg, mut, cfg)
 			// Wire the Silence lister so the watcher drops matched

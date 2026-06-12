@@ -1497,7 +1497,7 @@ fixers:
   tlsSecretMismatch:
     enabled: false
 
-# Protected namespaces (v1.25.2). The compiled-in floor — kube-system,
+# Protected namespaces (v1.26.0). The compiled-in floor — kube-system,
 # kube-public, kube-node-lease, rook-ceph, vault, external-secrets,
 # cnpg-system — is NEVER touched by any fixer or AI-proposed action and
 # cannot be shrunk. `extra` APPENDS namespaces to that floor: rendered as
