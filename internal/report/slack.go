@@ -50,8 +50,11 @@ type SilenceLinkConfig struct {
 	LongDur time.Duration
 }
 
-// enabled reports whether the config can mint links.
-func (c *SilenceLinkConfig) enabled() bool {
+// Enabled reports whether the config can mint links — a private key of
+// the right size AND a non-empty base URL. Used by both the diagnose-path
+// renderer (slack.go) and the watcher delta path (internal/watcher) to
+// gate silence-link minting; the renderers fall back gracefully when false.
+func (c *SilenceLinkConfig) Enabled() bool {
 	return c != nil && len(c.PrivateKey) == ed25519.PrivateKeySize && c.BaseURL != ""
 }
 
@@ -232,7 +235,7 @@ func FormatSlackWithSilence(results []probe.Result, diagnostics []diagnose.Diagn
 // still Source-only on the same string; this is a defensible default
 // until probe.Finding grows distinct Source/Subject fields.
 func silenceLinkLine(cfg *SilenceLinkConfig, f probe.Finding, now time.Time) string {
-	if !cfg.enabled() {
+	if !cfg.Enabled() {
 		return ""
 	}
 	short := cfg.ShortDur

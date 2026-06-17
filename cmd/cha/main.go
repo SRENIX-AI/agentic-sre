@@ -506,6 +506,12 @@ func watchCmd() *cobra.Command {
 		approvalServerURL string
 		signingKeyPath    string
 
+		// One-click Silence link windows (v1.26.3). Reuse the approval
+		// signing key; the watcher mints subject-scoped (short) + class-
+		// scoped (long) signed Silence links onto every posted finding.
+		silenceShortDur time.Duration
+		silenceLongDur  time.Duration
+
 		// M5 + M6 trigger sources (v1.23.0).
 		promTriggerURL      string
 		promTriggerInterval time.Duration
@@ -629,6 +635,7 @@ the post-fix cluster state.`,
 			// Soft-fail: missing key just disables URL minting; the
 			// watcher continues without click-to-fix URLs. Failures here
 			// MUST NOT block the watcher's primary diagnostics flow.
+			var silenceLinks report.SilenceLinkConfig
 			if approvalServerURL != "" {
 				keyPath := signingKeyPath
 				if keyPath == "" {
@@ -653,6 +660,17 @@ the post-fix cluster state.`,
 					if reg.FixProposer() == nil {
 						reg.RegisterFixProposer(ai.ManifestBridge{})
 					}
+					// Reuse the same signing key to mint the one-click
+					// Silence links the watcher delta path attaches to
+					// every posted finding (subject snooze + class mute).
+					// Gated identically: empty key / base URL → no links,
+					// renderer falls back to the kubectl heredoc.
+					silenceLinks = report.SilenceLinkConfig{
+						PrivateKey: priv,
+						BaseURL:    approvalServerURL,
+						ShortDur:   silenceShortDur,
+						LongDur:    silenceLongDur,
+					}
 				}
 			}
 
@@ -676,6 +694,7 @@ the post-fix cluster state.`,
 				CloudSource:            cloudSrc,
 				CloudCadence:           cloudCadence,
 				ApprovalBaseURL:        approvalServerURL,
+				SilenceLinks:           silenceLinks,
 				PromTriggerURL:         promTriggerURL,
 				PromTriggerInterval:    promTriggerInterval,
 				PromTriggerAlertFilter: promTriggerFilter,
@@ -794,6 +813,10 @@ the post-fix cluster state.`,
 		"Base URL of the approval-server (e.g. https://cha-approve.example.com). When set AND --signing-key-path resolves to a valid Ed25519 key, the watcher registers an ai.ManifestBridge FixProposer + signer and mints signed approve/deny URLs that ride through Slack / Alertmanager / DriftReport / ticketing adapters. Empty = no URL minting (pre-v1.16.0 behavior).")
 	c.Flags().StringVar(&signingKeyPath, "signing-key-path", os.Getenv(ai.EnvSigningKeyPath),
 		"Path to the Ed25519 signing key file (base64-encoded raw bytes). Defaults to $CHA_SIGNING_KEY_PATH or "+ai.DefaultSigningKeyPath+". Required when --approval-server-url is set; missing key falls back to URL-less mode (text-only proposal, no click-to-fix).")
+	c.Flags().DurationVar(&silenceShortDur, "silence-short-duration", report.DefaultSilenceShortDuration,
+		"Window for the subject-scoped \"🔕 Silence 24h\" one-click link the watcher attaches to each posted finding. Requires --approval-server-url + a signing key.")
+	c.Flags().DurationVar(&silenceLongDur, "silence-long-duration", report.DefaultSilenceLongDuration,
+		"Window for the class-scoped \"🔕 Silence class (90d)\" one-click link the watcher attaches to each posted finding. Requires --approval-server-url + a signing key.")
 
 	return c
 }
