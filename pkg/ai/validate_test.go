@@ -132,6 +132,167 @@ func TestProposalValidate_ExpiryWindow(t *testing.T) {
 	}
 }
 
+// newValidManifestProposal returns a fully-valid ApplyManifest proposal with a
+// safe-apply manifest that passes ValidateManifest.
+func newValidManifestProposal(t *testing.T) AIProposedAction {
+	t.Helper()
+	p := newValidProposal()
+	p.ActionID = "act-manifest-1"
+	p.ActionKind = ActionApplyManifest
+	p.Target = ObjectRef{Kind: "NetworkPolicy", Namespace: "app", Name: "cha-proposed-allow-intracluster"}
+	p.ManifestYAML = []byte(validNetworkPolicy)
+	// Sanity: the fixture itself must be valid under the strict creation check.
+	if err := p.Validate(); err != nil {
+		t.Fatalf("manifest fixture not valid under Validate(): %v", err)
+	}
+	return p
+}
+
+// TestValidateForExecution_EmptyRollback pins the exact failing case: an
+// otherwise-valid proposal whose Rollback.Description is empty (as it always is
+// once reconstructed from a signed approval token) must PASS ValidateForExecution
+// while it FAILS Validate.
+func TestValidateForExecution_EmptyRollback(t *testing.T) {
+	p := newValidProposal()
+	p.Rollback.Description = ""
+	if err := p.Validate(); !errors.Is(err, ErrMissingRollback) {
+		t.Fatalf("Validate(): got %v; want ErrMissingRollback (regression pin)", err)
+	}
+	if err := p.ValidateForExecution(); err != nil {
+		t.Errorf("ValidateForExecution() rejected empty-rollback proposal: %v", err)
+	}
+}
+
+// TestValidateForExecution_AllExecutorKinds asserts that every action kind that
+// reaches the executor validates for execution with an empty rollback.
+func TestValidateForExecution_AllExecutorKinds(t *testing.T) {
+	deleteKinds := []ActionKind{
+		ActionDeletePod,
+		ActionDeleteJob,
+		ActionDeleteCertRequest,
+		ActionDeleteACMEOrder,
+	}
+	for _, k := range deleteKinds {
+		p := newValidProposal()
+		p.ActionKind = k
+		p.Rollback.Description = "" // token omits it
+		if err := p.ValidateForExecution(); err != nil {
+			t.Errorf("kind=%q: ValidateForExecution() = %v; want nil", k, err)
+		}
+	}
+
+	// PatchDeployment with a payload.
+	patch := newValidProposal()
+	patch.ActionKind = ActionPatchDeployment
+	patch.Target = ObjectRef{Kind: "Deployment", Namespace: "default", Name: "demo"}
+	patch.PatchPayload = []byte(`{"spec":{"replicas":3}}`)
+	patch.Rollback.Description = ""
+	if err := patch.ValidateForExecution(); err != nil {
+		t.Errorf("PatchDeployment: ValidateForExecution() = %v; want nil", err)
+	}
+
+	// ApplyManifest with a valid manifest.
+	mani := newValidManifestProposal(t)
+	mani.Rollback.Description = ""
+	if err := mani.ValidateForExecution(); err != nil {
+		t.Errorf("ApplyManifest: ValidateForExecution() = %v; want nil", err)
+	}
+}
+
+// TestValidateForExecution_StillCatchesUnsafe asserts ValidateForExecution
+// drops ONLY the rollback check — every other invariant Validate enforces is
+// still enforced.
+func TestValidateForExecution_StillCatchesUnsafe(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*AIProposedAction)
+		want   error
+	}{
+		{
+			name:   "invalid action kind",
+			mutate: func(p *AIProposedAction) { p.ActionKind = ActionKind("ExecPod") },
+			want:   ErrInvalidActionKind,
+		},
+		{
+			name:   "empty action kind",
+			mutate: func(p *AIProposedAction) { p.ActionKind = ActionKind("") },
+			want:   ErrInvalidActionKind,
+		},
+		{
+			name:   "missing target name",
+			mutate: func(p *AIProposedAction) { p.Target.Name = "" },
+			want:   ErrEmptyTarget,
+		},
+		{
+			name:   "protected namespace",
+			mutate: func(p *AIProposedAction) { p.Target.Namespace = "kube-system" },
+			want:   ErrProtectedNamespace,
+		},
+		{
+			name: "patch payload on non-patch kind",
+			mutate: func(p *AIProposedAction) {
+				p.ActionKind = ActionDeletePod
+				p.PatchPayload = []byte(`{"spec":{"replicas":3}}`)
+			},
+			want: ErrInvalidActionKind,
+		},
+		{
+			name: "invalid manifest for ApplyManifest",
+			mutate: func(p *AIProposedAction) {
+				p.ActionKind = ActionApplyManifest
+				p.ManifestYAML = []byte("this is not: [valid yaml")
+			},
+			want: nil, // ValidateManifest error class; checked via non-nil below
+		},
+		{
+			name:   "expired window",
+			mutate: func(p *AIProposedAction) { p.ExpiresAt = p.CreatedAt.Add(-time.Minute) },
+			want:   ErrTokenExpired,
+		},
+		{
+			name:   "tier disallows proposals",
+			mutate: func(p *AIProposedAction) { p.Tier = TierT0 },
+			want:   ErrInvalidTier,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newValidProposal()
+			p.Rollback.Description = "" // prove rollback is NOT what trips it
+			tc.mutate(&p)
+			err := p.ValidateForExecution()
+			if err == nil {
+				t.Fatalf("ValidateForExecution() = nil; want error")
+			}
+			if tc.want != nil && !errors.Is(err, tc.want) {
+				t.Errorf("got %v; want %v", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestValidate_ExecutionParity asserts the two checks agree when rollback is
+// present (both nil) and diverge only on the rollback requirement.
+func TestValidate_ExecutionParity(t *testing.T) {
+	// Non-empty rollback: both agree (nil).
+	p := newValidProposal()
+	if err := p.Validate(); err != nil {
+		t.Fatalf("Validate() with rollback: %v", err)
+	}
+	if err := p.ValidateForExecution(); err != nil {
+		t.Fatalf("ValidateForExecution() with rollback: %v", err)
+	}
+
+	// Empty rollback: they diverge.
+	p.Rollback.Description = ""
+	if err := p.Validate(); !errors.Is(err, ErrMissingRollback) {
+		t.Errorf("Validate() empty rollback: got %v; want ErrMissingRollback", err)
+	}
+	if err := p.ValidateForExecution(); err != nil {
+		t.Errorf("ValidateForExecution() empty rollback: got %v; want nil", err)
+	}
+}
+
 func TestEnrichedDiagnosticValidate_LengthBound(t *testing.T) {
 	e := EnrichedDiagnostic{Enrichment: strings.Repeat("x", MaxEnrichmentChars+1)}
 	if err := e.Validate(); !errors.Is(err, ErrEnrichmentTooLong) {

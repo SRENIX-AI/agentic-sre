@@ -13,6 +13,18 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [1.26.2] — 2026-06-17
+
+### Fixed — human-approved (token-based) executions no longer fail with "ai proposal lacks rollback info" (OF1)
+
+The CHA-com approval-server executor reconstructs an `AIProposedAction` from the signed approval JWT and validated it with `(*AIProposedAction).Validate()` before applying the mutation. But the signed token deliberately carries only the safety-relevant identity (`action_id` / `tier` / `action_kind` / `target` / `diag_subject`) and intentionally OMITS the rollback description — while `Validate()` requires `Rollback.Description != ""` (`ErrMissingRollback`). So every human-approved, token-based execution failed at the execution gate even though the proposal was a fully-valid, approved action. Rollback is a proposal-CREATION quality gate (the LLM must supply a rollback plan, rendered to the approver in Slack/the ticket) — it is not an execution-time invariant and cannot be re-checked against a token that omits it by design.
+
+- **New `(*AIProposedAction).ValidateForExecution()`** (`pkg/ai/validate.go`) enforces every safety/structural invariant `Validate()` does — action_kind closed enum, target presence/shape, protected-namespace boundary, patch-payload/kind pairing, manifest validity for `ApplyManifest`, pull-request URL shape, expiry window, proposal-tier check — EXCEPT the rollback-description requirement. This is the correct check for executing an already-approved, reconstructed action; the CHA-com approval-server executor is the intended caller.
+- **`Validate()` behavior is UNCHANGED** (creation/sign-time contract stays strict, including `ErrMissingRollback`). The shared checks are factored into an unexported `validateStructural()` helper; `Validate()` = shared checks + rollback requirement, `ValidateForExecution()` = shared checks only. No signature or external-behavior change for existing callers/tests.
+- **Tests** pin the exact failing case (empty-rollback proposal passes `ValidateForExecution`, fails `Validate`) across every executor-reachable kind (`DeletePod` / `DeleteJob` / `DeleteCertRequest` / `DeleteACMEOrder` / `PatchDeployment` / `ApplyManifest`), assert `ValidateForExecution` still rejects the genuinely-unsafe cases (invalid/empty action_kind, missing target, protected namespace, patch on non-patch kind, invalid manifest, expired window, disallowed tier), and assert Validate↔ValidateForExecution parity when rollback is present.
+
+The T3/runbook validation path (`VaultRunbook.Validate`, which reuses `ErrMissingRollback` for "incomplete runbook") is untouched — scope is strictly `AIProposedAction` execution.
+
 ## [1.26.1] — 2026-06-12
 
 ### Fixed — watcher standby pods now serve `/healthz`; rolling upgrades no longer deadlock (O11, production 1.26.0 upgrade incident)
