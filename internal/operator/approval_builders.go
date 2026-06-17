@@ -829,6 +829,21 @@ func BuildApprovalServerIngress(cr *chav1alpha1.ClusterHealthAutopilot) *network
 							},
 						},
 						{
+							// /silence (Prefix → also covers /silence-class)
+							// consumes the signed silence token minted into
+							// Slack findings and creates a Silence CR
+							// (subject-scoped 24h or class-scoped long). Same
+							// one-shot-JTI + rate-budget envelope as /approve.
+							Path:     "/silence",
+							PathType: &pathType,
+							Backend: networkingv1.IngressBackend{
+								Service: &networkingv1.IngressServiceBackend{
+									Name: ApprovalServerName(cr),
+									Port: networkingv1.ServiceBackendPort{Name: "http"},
+								},
+							},
+						},
+						{
 							Path:     "/healthz",
 							PathType: &pathType,
 							Backend: networkingv1.IngressBackend{
