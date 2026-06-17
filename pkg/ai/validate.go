@@ -56,7 +56,57 @@ func IsProtectedNamespace(ns string) bool {
 //   - PatchPayload must be empty unless ActionKind == ActionPatchDeployment
 //   - CreatedAt and ExpiresAt must be set; ExpiresAt > CreatedAt
 //   - Tier must be a valid AllowsProposals tier (T1/T2/T3)
+//
+// This is the CREATION/SIGN-time contract: it is the union of the shared
+// structural invariants (validateStructural) PLUS the rollback-description
+// requirement. The rollback check is a proposal-QUALITY gate — the LLM must
+// supply a rollback plan, which is rendered to the approver in Slack/the
+// ticket — and is intentionally NOT re-checked at execution time. See
+// ValidateForExecution for the execution-time variant.
 func (a *AIProposedAction) Validate() error {
+	if err := a.validateStructural(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(a.Rollback.Description) == "" {
+		return ErrMissingRollback
+	}
+	return nil
+}
+
+// ValidateForExecution enforces every safety and structural invariant of an
+// AIProposedAction EXCEPT the rollback-description requirement. It is the
+// correct check for executing an already-approved action that the executor
+// has RECONSTRUCTED from a signed approval token.
+//
+// Why rollback is excluded: Rollback.Description is a creation-time QUALITY
+// gate — it is enforced at proposal mint (Validate, called before the proposal
+// is rendered or signed) and shown to the approver in the Slack message /
+// ticket so they can make an informed decision. The signed approval token
+// deliberately carries only the action's safety-relevant identity
+// (action_id / tier / action_kind / target / diag_subject) and intentionally
+// OMITS the rollback description. Re-running the full Validate() against a
+// proposal reconstructed from that token would therefore always fail with
+// ErrMissingRollback even though the proposal was a fully-valid, human-approved
+// action — so execution must use this method instead.
+//
+// Everything else Validate() enforces is execution-relevant and IS still
+// checked here: the action_kind closed enum, target presence/shape, protected-
+// namespace boundary, patch-payload/kind pairing, manifest validity for
+// ApplyManifest, pull-request URL shape for ProposePullRequest, the expiry
+// window, and the proposal-tier check.
+//
+// Intended caller: the CHA-com approval-server executor (ai/approval/executor.go
+// Execute), which validates the reconstructed proposal immediately before
+// applying the mutation.
+func (a *AIProposedAction) ValidateForExecution() error {
+	return a.validateStructural()
+}
+
+// validateStructural runs every AIProposedAction invariant that is relevant
+// both at creation/sign time AND at execution time. It deliberately EXCLUDES
+// the rollback-description requirement (a creation-time quality gate); callers
+// that need it (Validate) add it on top. See Validate and ValidateForExecution.
+func (a *AIProposedAction) validateStructural() error {
 	if !a.ActionKind.IsValid() {
 		return ErrInvalidActionKind
 	}
@@ -65,9 +115,6 @@ func (a *AIProposedAction) Validate() error {
 	}
 	if IsProtectedNamespace(a.Target.Namespace) {
 		return ErrProtectedNamespace
-	}
-	if strings.TrimSpace(a.Rollback.Description) == "" {
-		return ErrMissingRollback
 	}
 	if len(a.PatchPayload) > 0 && a.ActionKind != ActionPatchDeployment {
 		return ErrInvalidActionKind
