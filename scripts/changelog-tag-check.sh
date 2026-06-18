@@ -66,12 +66,15 @@ while IFS= read -r line; do
     continue
   fi
 
-  if [[ "$line" =~ ^##\ \[([0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+  # Numbered release heading. The optional `-PRERELEASE` suffix (e.g.
+  # `-alpha.1`) is part of the version and of the expected tag name
+  # (`v0.1.0-alpha.1`), so capture the full semver including any suffix.
+  if [[ "$line" =~ ^##\ \[([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)\] ]]; then
     in_unreleased=0
     version="${BASH_REMATCH[1]}"
     if [[ "$first_version_seen" -eq 0 ]]; then
-      # Topmost numbered heading — the section being released right
-      # now; its tag may not exist yet.
+      # Topmost numbered/pre-release heading — the section being released
+      # right now (incl. the re-baseline cut); its tag may not exist yet.
       first_version_seen=1
       continue
     fi
@@ -96,11 +99,11 @@ while IFS= read -r line; do
     # shipped-header signature (`### [x.y.z] — YYYY-MM-DD`); the date
     # separator is matched loosely since the dash glyph has varied.
     # (A two-`#` form is consumed by the release-heading branch above.)
-    if [[ "$line" =~ ^#{1,6}\ +\[[0-9]+\.[0-9]+\.[0-9]+\].*[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
+    if [[ "$line" =~ ^#{1,6}\ +\[[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\].*[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
       echo "changelog-tag-check: line $lineno: [Unreleased] content presents a dated version heading as shipped:" >&2
       echo "  $line" >&2
       fail=1
-    elif [[ "$line" =~ ^#{1,6}\ +\[[0-9]+\.[0-9]+\.[0-9]+\] ]]; then
+    elif [[ "$line" =~ ^#{1,6}\ +\[[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\] ]]; then
       echo "changelog-tag-check: line $lineno: [Unreleased] contains a version-numbered heading — cut a release section instead:" >&2
       echo "  $line" >&2
       fail=1

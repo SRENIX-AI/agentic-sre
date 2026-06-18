@@ -75,10 +75,12 @@ tests:
       ai.model: "qwen3.6-35b-a3b-fp8"
     asserts:
       # Match the v-prefix pattern rather than a hardcoded tag so the test
-      # survives appVersion bumps (the default tag is v<AppVersion>).
+      # survives appVersion bumps (the default tag is v<AppVersion>). The
+      # optional `-prerelease` suffix supports the pre-launch 0.x-alpha.N
+      # versioning (e.g. v0.1.0-alpha.1).
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: ^docker4zerocool/cha-com:v[0-9]+\.[0-9]+\.[0-9]+$
+          pattern: ^docker4zerocool/cha-com:v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$
 
   - it: AI_API_KEY env is sourced from the secret (never inlined)
     template: templates/aiwatch-deployment.yaml

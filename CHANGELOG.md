@@ -13,6 +13,37 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.1] — 2026-06-18
+
+**Version re-baseline.** This project is pre-launch; releases through v1.26.3
+were internal pre-alpha iterations mis-numbered as 1.x. Versioning is reset to
+SemVer 0.x with `-alpha.N` pre-releases. No code regression — 0.1.0-alpha.1 is
+the v1.26.3 tree under honest pre-alpha numbering.
+
+This release also moves per-checkin verification from GitHub CI to a local
+`make verify` flow (see `RELEASING.md`); the GitHub `ci.yml` / `bundle-smoke` /
+`helm-publish` workflows are now manual-only or release-tag-triggered.
+
+Content carried from the v1.26.3 tree (what the prior 1.x line shipped):
+
+- **Live watcher one-click silence links (OSS foundation, ex-1.26.3).** The
+  per-cycle watcher Slack post renders two signed one-click silence links
+  (24h subject-scoped snooze + 90d class-scoped mute) when a signer + approval
+  base URL are configured; falls back to the 24h kubectl one-liner when
+  unconfigured. Signed `SilenceTokenClaims` (EdDSA compact-JWS) protect the
+  window/scope/matcher from URL tampering; durations configurable via
+  `approval.silence.{shortDuration,longDuration}`.
+- **Execution-gate fix (ex-1.26.2).** New `ValidateForExecution()` enforces
+  every safety/structural invariant except the creation-time rollback-description
+  requirement, so human-approved token-based executions no longer fail with
+  "ai proposal lacks rollback info". `Validate()` (creation/sign-time) unchanged.
+- **Standby `/healthz` fix (ex-1.26.1).** `cha watch` binds the health listener
+  before leader election (process lifetime, not lease lifetime); `/readyz` is an
+  unconditional 200 alias. Fixes the `maxUnavailable=0` rolling-upgrade deadlock.
+- The full operator port, drift-class + M2 probes, supply-chain provenance,
+  ticketing, dashboard/playground surfaces, and the CHANGELOG↔tag CI gate that
+  accumulated across the 1.x line (see the headings below for detail).
+
 ## [1.26.3] — 2026-06-17
 
 ### Added — one-click Silence links on the LIVE watcher "needs human" Slack path (OSS foundation)

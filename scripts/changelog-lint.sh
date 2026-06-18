@@ -12,8 +12,14 @@
 #   1. each version heading carries EXACTLY ONE ISO (YYYY-MM-DD) date
 #   2. version headings appear in DESCENDING semver order
 #      (the `[Unreleased]` heading, if present, must be first and is skipped
-#       for the date/semver checks)
+#       for the date/semver checks; the TOPMOST numbered heading is also
+#       exempt from the order check — it is the in-flight release and may
+#       be a deliberate version re-baseline, e.g. the 1.x → 0.x-alpha reset)
 #   3. no version appears more than once
+#
+# Pre-release headings are supported: `## [x.y.z-alpha.N] — DATE` (and any
+# other `-PRERELEASE` suffix). The numeric core (x.y.z) drives the order/dup
+# checks; the full string (incl. suffix) is the dedup key.
 #
 # Exits non-zero with the offending lines on any violation.
 #
@@ -38,6 +44,7 @@ prev_major=-1
 prev_minor=-1
 prev_patch=-1
 have_prev=0
+version_count=0
 declare -A seen_version
 
 while IFS= read -r line; do
@@ -48,9 +55,11 @@ while IFS= read -r line; do
     continue
   fi
 
-  # Extract the semver version inside the brackets.
-  if [[ ! "$line" =~ ^##\ \[([0-9]+)\.([0-9]+)\.([0-9]+)\] ]]; then
-    echo "changelog-lint: heading is neither [Unreleased] nor [x.y.z]:" >&2
+  # Extract the semver version inside the brackets. The optional fourth
+  # capture is a SemVer pre-release suffix (e.g. `-alpha.1`); the numeric
+  # core (x.y.z) drives the order check, the full string is the dedup key.
+  if [[ ! "$line" =~ ^##\ \[([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?\] ]]; then
+    echo "changelog-lint: heading is neither [Unreleased] nor [x.y.z(-prerelease)]:" >&2
     echo "  $line" >&2
     fail=1
     continue
@@ -58,7 +67,9 @@ while IFS= read -r line; do
   major="${BASH_REMATCH[1]}"
   minor="${BASH_REMATCH[2]}"
   patch="${BASH_REMATCH[3]}"
-  version="${major}.${minor}.${patch}"
+  prerelease="${BASH_REMATCH[4]:-}"
+  version="${major}.${minor}.${patch}${prerelease}"
+  version_count=$((version_count + 1))
 
   # (1) exactly one ISO date on the heading.
   date_count=$(grep -oE "$iso_re" <<<"$line" | wc -l | tr -d ' ')
@@ -76,9 +87,16 @@ while IFS= read -r line; do
   fi
   seen_version[$version]=1
 
-  # (2) descending semver order vs the previous version heading.
-  if [[ "$have_prev" -eq 1 ]]; then
-    # cur < prev required (strictly descending).
+  # (2) descending semver order vs the previous version heading. The
+  # TOPMOST numbered heading is exempt: it is the in-flight release and may
+  # be a deliberate version re-baseline (the 1.x → 0.x-alpha reset places a
+  # numerically-lower version on top by design). Order is enforced strictly
+  # among every heading AFTER the topmost.
+  # version_count==2 is the topmost→next pair, which straddles the
+  # re-baseline boundary (0.x-alpha on top, 1.x below); skip just that one
+  # comparison. Every later pair (1.x vs 1.x) is checked normally.
+  if [[ "$have_prev" -eq 1 && "$version_count" -gt 2 ]]; then
+    # cur < prev required (strictly descending), numeric core only.
     if (( major > prev_major )) || \
        (( major == prev_major && minor > prev_minor )) || \
        (( major == prev_major && minor == prev_minor && patch >= prev_patch )); then

@@ -19,19 +19,9 @@
 name: bundle-smoke
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*.*.*"]
-  pull_request:
-    paths:
-      - "bundle/**"
-      - "bundle.Dockerfile"
-      - "internal/operator/**"
-      - "cmd/cha-operator/**"
-      - "api/v1alpha1/**"
-      - "charts/cluster-health-autopilot/templates/operator-deployment.yaml"
-      - ".github/workflows/bundle-smoke.yml"
   workflow_dispatch: {}
+  push:
+    tags: ["v*.*.*", "v*.*.*-*"]
 
 # Single in-flight run per ref. A new push cancels the prior — bundle
 # smoke is slow + idempotent, so old runs are just wasted minutes.
