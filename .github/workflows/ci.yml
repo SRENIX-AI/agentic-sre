@@ -1,10 +1,10 @@
 name: CI
 
+# Per-checkin verification runs LOCALLY via `make verify` (see RELEASING.md).
+# This workflow is manual-only; CI minutes are spent only on release tags +
+# on-demand dispatch.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch: {}
 
 permissions:
   contents: read

@@ -82,6 +82,57 @@ expect pass "topmost-heading-untagged-is-exempt" "$FIXTURES/in-flight-release.md
 # The real CHANGELOG must pass its own gate.
 expect pass "repo-changelog" "$SCRIPT_DIR/../CHANGELOG.md"
 
+# A SemVer PRE-RELEASE heading as the TOPMOST numbered heading is exempt
+# from the tag requirement (the in-flight release / re-baseline cut) — the
+# `0.1.0-alpha.1` re-baseline lands on top with its `v0.1.0-alpha.1` tag
+# pushed only after merge.
+cat >"$FIXTURES/prerelease-topmost.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+## [0.1.0-alpha.1] — 2026-06-18
+
+### Added — version re-baseline (tag lands after merge)
+
+## [1.26.3] — 2026-06-17
+EOF
+expect pass "prerelease-topmost-heading-is-exempt" "$FIXTURES/prerelease-topmost.md"
+
+# A NON-topmost pre-release heading WITH a matching git tag passes. The
+# gate resolves tags against this repo, which has no pre-release tags, so
+# we run the gate inside a throwaway git repo that DOES carry the tag.
+TAGGED_REPO="$(mktemp -d)"
+git -C "$TAGGED_REPO" init -q
+git -C "$TAGGED_REPO" config user.email t@t && git -C "$TAGGED_REPO" config user.name t
+git -C "$TAGGED_REPO" commit -q --allow-empty -m init
+git -C "$TAGGED_REPO" tag v0.1.0-alpha.1
+git -C "$TAGGED_REPO" tag v0.1.0-alpha.2
+mkdir -p "$TAGGED_REPO/scripts"
+cp "$GATE" "$TAGGED_REPO/scripts/changelog-tag-check.sh"
+cat >"$TAGGED_REPO/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+## [0.1.0-alpha.2] — 2026-06-19
+
+### Added — in-flight (topmost, exempt)
+
+## [0.1.0-alpha.1] — 2026-06-18
+
+### Added — earlier pre-release, tagged v0.1.0-alpha.1
+EOF
+rc=0
+bash "$TAGGED_REPO/scripts/changelog-tag-check.sh" "$TAGGED_REPO/CHANGELOG.md" >/dev/null 2>&1 || rc=$?
+if [[ "$rc" -ne 0 ]]; then
+  echo "FAIL [non-topmost-prerelease-tagged]: expected PASS, got exit $rc" >&2
+  fail=1
+else
+  echo "ok   [non-topmost-prerelease-tagged] (passes the gate, as expected)"
+fi
+rm -rf "$TAGGED_REPO"
+
 # --- Negative fixtures (must FAIL) ------------------------------------
 
 # A dated version HEADING inside [Unreleased] presents the version as
@@ -130,6 +181,25 @@ cat >"$FIXTURES/untagged-release.md" <<'EOF'
 ### Added — release that was never tagged
 EOF
 expect fail "non-topmost-heading-without-tag" "$FIXTURES/untagged-release.md"
+
+# A NON-topmost pre-release heading WITHOUT a matching git tag fails — the
+# claimed-but-never-cut class, now extended to pre-release versions. This
+# repo has no `v0.1.0-alpha.*` tags, so the second (non-topmost) heading is
+# correctly flagged.
+cat >"$FIXTURES/untagged-prerelease.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+## [1.26.3] — 2026-06-17
+
+### Fixed — topmost (exempt)
+
+## [0.1.0-alpha.1] — 2026-06-18
+
+### Added — pre-release heading whose v0.1.0-alpha.1 tag was never pushed
+EOF
+expect fail "non-topmost-prerelease-without-tag" "$FIXTURES/untagged-prerelease.md"
 
 if [[ "$fail" -ne 0 ]]; then
   echo "changelog-tag-check_test: FAILED" >&2

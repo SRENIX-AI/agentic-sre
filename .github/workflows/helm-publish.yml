@@ -10,11 +10,9 @@ name: Publish Helm Chart
 #   helm install cha cha/cluster-health-autopilot ...
 
 on:
+  workflow_dispatch: {}
   push:
-    branches:
-      - main
-    paths:
-      - "charts/**"
+    tags: ["v*.*.*", "v*.*.*-*"]
 
 permissions:
   contents: write   # push to gh-pages, create chart releases
