@@ -13,6 +13,9 @@ serves the latest tagged chart cut.
 
 ## [Unreleased]
 
+### Fixed
+- **NetworkPolicy approval links now honor `--approval-ttl`.** `ManifestBridge` and `BuildApplyManifestProposalWithTTL` (new) accept a configurable TTL; the old `BuildApplyManifestProposal` is preserved for backward compatibility (delegates to TTL=0 → `DefaultProposalTTL`). Previously every NetworkPolicy approve/deny link expired in 15 minutes regardless of the operator-configured TTL, because `BuildApplyManifestProposal` hardcoded `DefaultProposalTTL`. The CHA-com aiwatch now passes `--approval-ttl` (default 4h) here so on-call SREs have a full window to respond. `ManifestBridge` gains a `ProposalTTL` field for OSS callers that register it directly.
+
 ## [0.2.0-alpha.5] — 2026-06-19
 
 ### Changed

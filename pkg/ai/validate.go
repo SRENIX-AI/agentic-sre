@@ -26,6 +26,12 @@ var ProtectedNamespaces = map[string]struct{}{
 	"vault":            {},
 	"external-secrets": {},
 	"cnpg-system":      {},
+	// CNI namespaces — a default-deny NetworkPolicy in these namespaces
+	// can break node-to-node Calico dataplane traffic and the Tigera
+	// operator reconciliation loop, causing cluster-wide connectivity
+	// loss. Never propose policies here.
+	"calico-system":   {},
+	"tigera-operator": {},
 }
 
 // IsProtectedNamespace reports whether ns is on the no-touch list —
