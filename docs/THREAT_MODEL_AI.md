@@ -206,10 +206,12 @@ under the OWASP 2025 LLM10 rename — see also LLM10 below):
   `Environment.GetEvents` route through `snapshot.Source`, which
   preserves the v0.2 privacy contract (`for k := range secret.Data`).
 - *LLM-backed deep-RCA investigator (CHA-com, v0.2.0-alpha.1)*: every tool
-  output is passed through `pkg/ai.ContainsSecretLike` (base64≥40,
-  hex≥32 patterns per `pkg/ai/redact.go`) before being added to the
-  prompt; the investigation summary is scrubbed before it is written
-  into the DriftReport. `Environment` exposes **no Secret read** — there
+  output is actively redacted via `pkg/ai.RedactEventMessage` /
+  `pkg/ai.RedactEvents` (`pkg/ai/redact.go`) — substituting AWS keys,
+  Vault `hvs.*` tokens, JWTs, GitHub PATs, Slack tokens, base64≥40, and
+  hex≥32 strings with `[REDACTED]` — before being added to the prompt;
+  the investigation summary is scrubbed before it is written into the
+  DriftReport. `Environment` exposes **no Secret read** — there
   is no method that returns Secret values. Vault is not touched.
   For the Firecrawl path, see the **External egress exception** section
   above — the multi-layer redaction chain ensures no cluster identifier
