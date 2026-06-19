@@ -30,16 +30,34 @@ import (
 //
 //   - **Wildcard-verb ClusterRole/Role** — any rule with verbs
 //     including `"*"` against a non-system resource is flagged as a
-//     warning. System namespaces (kube-system, kube-public) and the
-//     cluster-admin / system:* / *-admin / *-edit / *-view canonical
-//     roles are skipped. Operators rarely want a wildcard verb in a
-//     user-managed role.
+//     warning. The following are suppressed (not flagged) because they
+//     legitimately hold wildcard verbs:
+//
+//   - System namespaces: kube-system, kube-public, kube-node-lease,
+//     and well-known operator namespaces (calico-system,
+//     tigera-operator, minio-operator, kasten-io, olm, operators,
+//     rook-ceph, cert-manager, longhorn-system, cnpg-system,
+//     external-secrets, vault, local-path-storage, cattle-system,
+//     openshift-operators).
+//
+//   - Name-prefixed system / operator roles: system:, cluster-admin,
+//     k10-, kasten-, calico-, tigera-, minio-, olm., olm-, k3s-,
+//     local-path-, console-, rook-, cert-manager, velero, longhorn-,
+//     cnpg-, external-secrets, vault-, openshift-.
+//
+//   - Exact canonical names: admin, edit, view, cluster-owner,
+//     local-clusterowner (exact match prevents over-suppression of
+//     user roles like custom-admin or payments-admin).
+//     Operators rarely want a wildcard verb in a user-managed role.
+//     NOTE: a configurable extension point (e.g. a flag or ConfigMap
+//     entry for site-specific prefixes/names) is a natural follow-up.
 //
 //   - **ServiceAccount with no RoleBinding** — a ServiceAccount
 //     mounted to a Deployment but no RoleBinding / ClusterRoleBinding
 //     references it. The pod is running with default-token permissions
 //     which is typically far less than the workload needs; symptoms
-//     are intermittent "forbidden" errors. Warning.
+//     are intermittent "forbidden" errors. Warning. SAs in well-known
+//     operator namespaces (same list above) are suppressed.
 //
 // Out of scope (deliberately):
 //   - Network policy gaps (Workstream B6 — security drift class)
@@ -75,20 +93,73 @@ var (
 )
 
 // systemRBACNamespaces are namespaces whose RBAC is managed by the
-// cluster operator (kubeadm / cloud control plane) — out-of-band edits
-// there are expected and noisy to flag.
+// cluster operator (kubeadm / cloud control plane) or a well-known
+// third-party operator — out-of-band edits and unbound SAs there are
+// expected and noisy to flag.
 var systemRBACNamespaces = map[string]struct{}{
+	// Kubernetes core
 	"kube-system":     {},
 	"kube-public":     {},
 	"kube-node-lease": {},
+	// Well-known third-party operators whose SAs legitimately exist
+	// without user-managed RoleBindings.
+	"calico-system":       {},
+	"tigera-operator":     {},
+	"minio-operator":      {},
+	"kasten-io":           {},
+	"olm":                 {},
+	"operators":           {},
+	"rook-ceph":           {},
+	"cert-manager":        {},
+	"longhorn-system":     {},
+	"cnpg-system":         {},
+	"external-secrets":    {},
+	"vault":               {},
+	"local-path-storage":  {},
+	"cattle-system":       {},
+	"openshift-operators": {},
 }
 
-// systemRBACNamePrefixes flag canonical roles that the K8s controller
-// manager + admission controllers manipulate. Wildcard verbs in these
-// roles are expected (cluster-admin literally has `*`).
+// systemRBACNamePrefixes lists name prefixes for ClusterRoles/Roles
+// that the K8s controller manager, admission controllers, or well-known
+// third-party operators manage. Wildcard verbs in these roles are
+// expected and non-actionable.
 var systemRBACNamePrefixes = []string{
+	// Kubernetes built-ins
 	"system:",
 	"cluster-admin",
+	// Third-party operators
+	"k10-",
+	"kasten-",
+	"calico-",
+	"tigera-",
+	"minio-",
+	"olm.",
+	"olm-",
+	"k3s-",
+	"local-path-",
+	"console-",
+	"rook-",
+	"cert-manager",
+	"velero",
+	"longhorn-",
+	"cnpg-",
+	"external-secrets",
+	"vault-",
+	"openshift-",
+}
+
+// systemRBACExactNames lists exact ClusterRole/Role names that are
+// canonical K8s aggregated roles or well-known operator roles.
+// Exact-name matching is used (not prefix) so that user roles like
+// "custom-admin" or "payments-admin" are still flagged. Prefixing
+// "admin" would over-suppress those legitimate user-role signals.
+var systemRBACExactNames = map[string]struct{}{
+	"admin":              {},
+	"edit":               {},
+	"view":               {},
+	"cluster-owner":      {},
+	"local-clusterowner": {},
 }
 
 // Run walks the RBAC + ServiceAccount surfaces and emits one
@@ -278,7 +349,18 @@ func (r RBACDrift) checkUnboundServiceAccounts(ctx context.Context, src snapshot
 }
 
 // isSystemRBAC reports whether the role/binding is one the K8s control
-// plane manages — wildcard verbs there are expected.
+// plane or a well-known third-party operator manages — wildcard verbs
+// and unbound SAs there are expected and non-actionable.
+//
+// Three suppression paths:
+//  1. Namespace is in systemRBACNamespaces (e.g. kube-system,
+//     calico-system, kasten-io).
+//  2. Name starts with a prefix in systemRBACNamePrefixes (e.g.
+//     system:, k10-, calico-).
+//  3. Name is an exact match in systemRBACExactNames (e.g. admin,
+//     edit, view, cluster-owner). Exact matching is intentional: it
+//     prevents over-suppression of user roles like "custom-admin" or
+//     "payments-admin" that should still be flagged.
 func isSystemRBAC(name, namespace string) bool {
 	if _, ok := systemRBACNamespaces[namespace]; ok {
 		return true
@@ -287,6 +369,9 @@ func isSystemRBAC(name, namespace string) bool {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}
+	}
+	if _, ok := systemRBACExactNames[name]; ok {
+		return true
 	}
 	return false
 }

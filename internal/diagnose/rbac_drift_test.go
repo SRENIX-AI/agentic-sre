@@ -381,3 +381,143 @@ func TestRBACDrift_EmptyCluster_NoOp(t *testing.T) {
 		t.Errorf("empty cluster should produce 0 diagnostics; got %+v", got)
 	}
 }
+
+// --- expanded allowlist: suppressed operator/system ClusterRoles --------
+
+// TestRBACDrift_KnownOperatorPrefixes_Suppressed verifies that wildcard
+// ClusterRoles with well-known operator name prefixes (k10-, kasten-,
+// calico-, minio-, k3s-, olm., local-path-, console-) are suppressed.
+func TestRBACDrift_KnownOperatorPrefixes_Suppressed(t *testing.T) {
+	suppressed := []string{
+		"k10-admin",
+		"kasten-admin",
+		"calico-tiered-policy-passthrough",
+		"minio-operator",
+		"k3s-cloud-controller-manager",
+		"local-path-provisioner-role",
+		"console-sa-role",
+		"olm.og.some-operator",
+	}
+	for _, name := range suppressed {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+				"clusterroles": {makeClusterRole(name, []string{"*"}, []string{""}, []string{"*"})},
+			}}
+			got := RBACDrift{}.Run(context.Background(), src)
+			if len(got) != 0 {
+				t.Errorf("operator/system ClusterRole %q should be suppressed; got %d diagnostics: %+v",
+					name, len(got), got)
+			}
+		})
+	}
+}
+
+// TestRBACDrift_CanonicalExactNames_Suppressed verifies that the exact
+// names admin, edit, view, cluster-owner, local-clusterowner are
+// suppressed regardless of their rules — these are K8s aggregated roles
+// or well-known cluster-owner roles that legitimately hold wildcard verbs.
+func TestRBACDrift_CanonicalExactNames_Suppressed(t *testing.T) {
+	suppressed := []string{
+		"admin",
+		"edit",
+		"view",
+		"cluster-owner",
+		"local-clusterowner",
+	}
+	for _, name := range suppressed {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+				"clusterroles": {makeClusterRole(name, []string{"*"}, []string{""}, []string{"*"})},
+			}}
+			got := RBACDrift{}.Run(context.Background(), src)
+			if len(got) != 0 {
+				t.Errorf("canonical ClusterRole %q should be suppressed; got %d diagnostics: %+v",
+					name, len(got), got)
+			}
+		})
+	}
+}
+
+// TestRBACDrift_UserRoleNotOverSuppressed verifies that user-defined
+// roles whose names RESEMBLE system names but are not exact matches or
+// exact prefixes are still flagged.  This is the over-suppression guard:
+// "custom-admin" is not the canonical "admin", "payments-admin" is not
+// "admin", and "my-app-wildcard" has no system prefix.
+func TestRBACDrift_UserRoleNotOverSuppressed(t *testing.T) {
+	cases := []struct {
+		kind string // "clusterroles" or "roles"
+		ns   string // namespace (empty for ClusterRole)
+		name string
+	}{
+		{kind: "clusterroles", ns: "", name: "my-app-wildcard"},
+		{kind: "roles", ns: "team-x", name: "custom-admin"},
+		{kind: "clusterroles", ns: "", name: "payments-admin"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.kind+"/"+tc.ns+"/"+tc.name, func(t *testing.T) {
+			var obj unstructured.Unstructured
+			if tc.ns == "" {
+				obj = makeClusterRole(tc.name, []string{"*"}, []string{""}, []string{"pods"})
+			} else {
+				obj = makeRole(tc.ns, tc.name, []string{"*"}, []string{""}, []string{"pods"})
+			}
+			src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+				tc.kind: {obj},
+			}}
+			got := RBACDrift{}.Run(context.Background(), src)
+			if len(got) != 1 {
+				t.Errorf("user role %q must still be flagged (not suppressed); got %d diagnostics: %+v",
+					tc.name, len(got), got)
+			}
+		})
+	}
+}
+
+// TestRBACDrift_OperatorNamespaceUnboundSA_Suppressed verifies that
+// unbound ServiceAccounts in well-known operator namespaces (e.g.
+// calico-system, tigera-operator) are NOT reported, because those SAs
+// are managed by the operator itself and lack user-facing RoleBindings
+// by design.
+func TestRBACDrift_OperatorNamespaceUnboundSA_Suppressed(t *testing.T) {
+	operatorNSCases := []struct {
+		ns  string
+		sa  string
+		pod string
+	}{
+		{"calico-system", "csi-node-driver", "csi-node-driver-abc"},
+		{"tigera-operator", "tigera-operator", "tigera-operator-xyz"},
+	}
+	for _, tc := range operatorNSCases {
+		tc := tc
+		t.Run(tc.ns+"/"+tc.sa, func(t *testing.T) {
+			src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+				"pods": {makeRBACPod(tc.ns, tc.pod, tc.sa)},
+			}}
+			got := RBACDrift{}.Run(context.Background(), src)
+			if len(got) != 0 {
+				t.Errorf("unbound SA in operator namespace %q should be suppressed; got %d diagnostics: %+v",
+					tc.ns, len(got), got)
+			}
+		})
+	}
+}
+
+// TestRBACDrift_UserNamespaceUnboundSA_StillFlagged verifies that an
+// unbound SA in a plain user namespace (e.g. "payments") is still
+// reported after the operator-namespace suppression was added.
+func TestRBACDrift_UserNamespaceUnboundSA_StillFlagged(t *testing.T) {
+	src := &memSourceRBAC{byResource: map[string][]unstructured.Unstructured{
+		"pods": {makeRBACPod("payments", "payments-api-xyz", "payments-sa")},
+	}}
+	got := RBACDrift{}.Run(context.Background(), src)
+	if len(got) != 1 {
+		t.Errorf("unbound SA in user namespace 'payments' must still be flagged; got %d diagnostics: %+v",
+			len(got), got)
+	}
+	if !strings.Contains(got[0].Subject, "ServiceAccount/payments/payments-sa") {
+		t.Errorf("subject should name the SA; got %q", got[0].Subject)
+	}
+}
