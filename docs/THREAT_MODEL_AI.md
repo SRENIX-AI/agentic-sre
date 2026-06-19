@@ -16,10 +16,10 @@ There are two distinct AI surfaces in scope:
    DriftReports. **Two implementations**: a deterministic rule-based
    investigator that ships in OSS (no LLM, most LLM-specific rows are
    N/A), and an LLM-backed **deep-RCA investigator** that ships in
-   CHA-com (v1.27+) and extends the closed-enum Environment with optional
+   CHA-com (v0.2.0-alpha.1) and extends the closed-enum Environment with optional
    Firecrawl web research. Reviewed in ADVERSARIAL_ANALYSIS.md §9.
 
-**External egress exception (v1.27+, CHA-com only):** Firecrawl is the
+**External egress exception (v0.2.0-alpha.1, CHA-com only):** Firecrawl is the
 one deliberate exception to the "payload never leaves the cluster"
 invariant. Mitigation layers (defense in depth):
 
@@ -205,7 +205,7 @@ under the OWASP 2025 LLM10 rename — see also LLM10 below):
   on namespaced resources. `Environment.Describe` and
   `Environment.GetEvents` route through `snapshot.Source`, which
   preserves the v0.2 privacy contract (`for k := range secret.Data`).
-- *LLM-backed deep-RCA investigator (CHA-com, v1.27+)*: every tool
+- *LLM-backed deep-RCA investigator (CHA-com, v0.2.0-alpha.1)*: every tool
   output is passed through `pkg/ai.ContainsSecretLike` (base64≥40,
   hex≥32 patterns per `pkg/ai/redact.go`) before being added to the
   prompt; the investigation summary is scrubbed before it is written

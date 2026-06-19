@@ -46,7 +46,7 @@ These events share a `correlation_id` = the DriftReport name being
 investigated, so a full per-report trace links cleanly to the enrichment,
 proposal, approval, and action chains that may follow.
 
-**Ticket-closure recording** (v1.27+): when a Jira/ServiceNow ticket is
+**Ticket-closure recording** (v0.2.0-alpha.1): when a Jira/ServiceNow ticket is
 resolved (finding cleared), an `ai.memory.recorded` event is emitted with
 `details.verdict = "cleared"` and `details.delivery = "ticket-closed"`.
 This is best-effort; a recording failure emits `ai.memory.record_failed`

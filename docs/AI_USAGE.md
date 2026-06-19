@@ -61,7 +61,7 @@ Each tier is documented in [AI_TIERS.md](AI_TIERS.md). Quick overview:
 | Tier | What it adds | What it does **NOT** add |
 |---|---|---|
 | **T0 Narration** | LLM-generated 2–4 sentence root-cause narrative under each diagnostic | Any mutation capability. Tier 0 is read-only enrichment. |
-| **L2 Investigator (LLM-backed deep-RCA, v1.27+)** | Replaces the OSS rule-based investigator with an LLM that picks read-only cluster tools dynamically from the same closed `Environment` enum, synthesizes a client-redacted Firecrawl web query for external documentation search, persists the root-cause analysis to the `cha_investigations` Qdrant collection, and forwards the RCA to every AI tier (T0–T3) via a `<root_cause>` prompt block. | Any new cluster tool, any mutation capability, any new RBAC. Firecrawl is opt-in (key env must be set); the cluster tool surface is unchanged. |
+| **L2 Investigator (LLM-backed deep-RCA, v0.2.0-alpha.1)** | Replaces the OSS rule-based investigator with an LLM that picks read-only cluster tools dynamically from the same closed `Environment` enum, synthesizes a client-redacted Firecrawl web query for external documentation search, persists the root-cause analysis to the `cha_investigations` Qdrant collection, and forwards the RCA to every AI tier (T0–T3) via a `<root_cause>` prompt block. | Any new cluster tool, any mutation capability, any new RBAC. Firecrawl is opt-in (key env must be set); the cluster tool surface is unchanged. |
 | **T1 Single fix** | One-click signed URLs that apply an existing OSS fixer to a specific target | New verbs, new RBAC, autonomous execution |
 | **T2 Multi-step plan** | Sequential multi-action plans with per-step approval | Bypass of step-by-step approval; plans cannot self-modify |
 | **T3 Vault runbook** | Generated `vault kv patch` runbook + dual-approval recording | CHA-com NEVER writes to Vault. Runbook is human-run. |
@@ -133,7 +133,7 @@ no raw identifier leaks into constructed prompts.
 
 ---
 
-## New flags in v1.27+ (CHA-com)
+## New flags in v0.2.0-alpha.1 (CHA-com)
 
 | Flag | Default | Notes |
 |---|---|---|

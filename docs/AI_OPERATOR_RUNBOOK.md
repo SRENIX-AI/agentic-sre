@@ -190,7 +190,7 @@ or without the `🔬` block.
 
 ## Scenario 8a — Firecrawl deep-RCA not enriching investigations
 
-**Context**: CHA-com v1.27+ paid binary; `ai.enabled=true`; `--firecrawl-enabled`
+**Context**: CHA-com v0.2.0-alpha.1 paid binary; `ai.enabled=true`; `--firecrawl-enabled`
 defaults to `true` but is inert without the API key.
 
 **Symptom**: Investigation `🔬` blocks appear but contain no web citations or
@@ -259,15 +259,36 @@ kubectl -n cluster-health-autopilot get events \
       | contains("rag_short_circuit"))'
 ```
 
-**Remediation** — lower the threshold or disable:
-```sh
-# Require tighter similarity match
-helm upgrade cha cha/cluster-health-autopilot --reuse-values \
-  --set 'ai.ragShortCircuitThreshold=0.97'
+**Remediation** — lower the threshold or disable via the operator CR `spec.ai.extraArgs`:
 
-# Disable short-circuit entirely
-helm upgrade cha cha/cluster-health-autopilot --reuse-values \
-  --set 'ai.ragShortCircuit=false'
+CHA-com flags are passed through the `ClusterHealthAutopilot` CR, not Helm values.
+Edit the CR directly:
+
+```sh
+kubectl edit clusterhealthautopilot bionic -n cluster-health-autopilot
+```
+
+Then adjust `spec.ai.extraArgs`. Examples:
+
+```yaml
+spec:
+  ai:
+    extraArgs:
+      # ... existing args such as --rag-store-url, --autonomy=true, etc. ...
+
+      # Require a tighter similarity match (default is 0.92):
+      - --rag-short-circuit-threshold=0.97
+
+      # To disable the short-circuit entirely, add:
+      - --rag-short-circuit=false
+      # (omitting the flag leaves it ON, which is the default)
+```
+
+Save and exit; the operator will roll out a new aiwatch pod with the updated flags.
+Confirm the new flag is active:
+```sh
+kubectl -n cluster-health-autopilot exec deploy/bionic-aiwatch -- \
+  cha-com --help 2>&1 | grep rag-short-circuit
 ```
 
 ---

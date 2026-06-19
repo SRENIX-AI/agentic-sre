@@ -133,7 +133,7 @@ and synthesizes a conclusion. The OSS implementation is rule-based
 **deep-RCA investigator** that extends the closed Environment surface
 with optional Firecrawl web research.
 
-**CHA-com deep-RCA investigator (v1.27+, paid)**: The
+**CHA-com deep-RCA investigator (v0.2.0-alpha.1, paid)**: The
 `ai/investigator.go:LLMInvestigator` replaces the rule-based
 investigator when the AI tier is enabled. It:
 
@@ -338,7 +338,7 @@ Operators who can't extract a free burst on each pod restart. Set
 `ai.rateLimit.coldStartFull: true` if you need the legacy
 burst-on-startup behavior.
 
-**RAG short-circuit (v1.27+, default ON).** `--rag-short-circuit` is
+**RAG short-circuit (v0.2.0-alpha.1, default ON).** `--rag-short-circuit` is
 now **on by default** (inert unless `--memory-store-url` is set). When
 a previously-CLEARED, replayable fix for the same diagnostic class
 exceeds the `--rag-short-circuit-threshold` (default `0.92`) cosine
