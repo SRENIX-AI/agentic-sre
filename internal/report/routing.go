@@ -28,10 +28,12 @@ type SlackChannels struct {
 // renderAIBlocks appends optional AI-tier blocks (investigation, enrichment,
 // approval URL) to a Slack message builder. Renders nothing when no AI fields
 // are populated — OSS deployments produce identical output to today.
+// renderAIBlocks emits the AI-tier addenda for one finding: the LLM narrative
+// enrichment and the Approve/Deny action row. The Layer-2 investigation
+// (root cause) is NOT rendered here — it leads the guidance block via
+// renderGuidance so every finding is root-cause-first; rendering it here too
+// would duplicate it.
 func renderAIBlocks(b *strings.Builder, d DeltaDiag) {
-	if d.Investigation != "" {
-		fmt.Fprintf(b, "  🔬 _%s_\n", d.Investigation)
-	}
 	if d.Enrichment != "" {
 		fmt.Fprintf(b, "  🤖 _%s_\n", d.Enrichment)
 	}
@@ -218,9 +220,8 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 		} else {
 			fmt.Fprintf(&b, "• ⚠️ *%s*\n  %s\n", d.Subject, d.Message)
 		}
-		if d.Remediation != "" {
-			fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
-		}
+		// Root-cause-first guidance (investigation before remediation).
+		renderGuidance(&b, d.Investigation, d.Remediation)
 		// Only show the silence affordance for findings that have been
 		// around at least one cycle — a brand-new problem should be
 		// investigated, not immediately silenced.
@@ -281,6 +282,7 @@ func SplitCriticalPayloadsConfig(unfixable []DeltaDiag, resolved []ResolvedDiag,
 			if r.Message != "" {
 				fmt.Fprintf(&b, "  _%s_\n", r.Message)
 			}
+			renderResolvedRootCause(&b, r)
 		}
 		resolvedSection = b.String()
 	}
@@ -509,9 +511,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 				continue
 			}
 			fmt.Fprintf(&b, "• ❌ *%s*\n  %s\n", d.Subject, d.Message)
-			if d.Remediation != "" {
-				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
-			}
+			renderGuidance(&b, d.Investigation, d.Remediation)
 			renderSilenceSnippet(&b, d)
 			renderAIBlocks(&b, d)
 		}
@@ -524,9 +524,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 				continue
 			}
 			fmt.Fprintf(&b, "• ⚠️ *%s*\n  %s\n", d.Subject, d.Message)
-			if d.Remediation != "" {
-				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
-			}
+			renderGuidance(&b, d.Investigation, d.Remediation)
 			renderSilenceSnippet(&b, d)
 			renderAIBlocks(&b, d)
 		}
@@ -539,6 +537,7 @@ func FormatCriticalPayload(unfixable []DeltaDiag, resolved []ResolvedDiag) Slack
 			if r.Message != "" {
 				fmt.Fprintf(&b, "  _%s_\n", r.Message)
 			}
+			renderResolvedRootCause(&b, r)
 		}
 	}
 

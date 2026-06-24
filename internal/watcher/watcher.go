@@ -786,8 +786,11 @@ func (w *Watcher) runCycle(ctx context.Context) {
 	toResolveDiags := make([]report.ResolvedDiag, 0, len(toResolve))
 	for _, e := range toResolve {
 		toResolveDiags = append(toResolveDiags, report.ResolvedDiag{
-			Subject: e.subject,
-			Message: e.message,
+			Subject:       e.subject,
+			Message:       e.message,
+			Severity:      report.NormalizeSeverity(e.severity, e.source),
+			Remediation:   e.remediation,
+			Investigation: e.investigation,
 		})
 	}
 
@@ -1005,9 +1008,12 @@ func buildCurrentState(results []probe.Result, diags []diagnose.Diagnostic) map[
 // field additions automatically reach every destination.
 func seenEntryToDeltaDiag(e *seenEntry) report.DeltaDiag {
 	return report.DeltaDiag{
-		Subject:             e.subject,
-		Source:              e.source,
-		Severity:            e.severity,
+		Subject: e.subject,
+		Source:  e.source,
+		// Canonical model: severity is normalized HERE, once, so every delivery
+		// adapter (Slack, ticketing) sees a clean info|warning|critical value
+		// and never re-derives it.
+		Severity:            report.NormalizeSeverity(e.severity, e.source),
 		Message:             e.message,
 		Remediation:         e.remediation,
 		Investigation:       e.investigation,

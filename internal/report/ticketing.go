@@ -204,11 +204,13 @@ func buildTicketBody(d DeltaDiag, cluster, runID string) string {
 	if d.Message != "" {
 		fmt.Fprintf(&b, "## Diagnostic\n\n%s\n\n", d.Message)
 	}
-	if d.Remediation != "" {
-		fmt.Fprintf(&b, "## Remediation\n\n%s\n\n", d.Remediation)
-	}
+	// Root-cause-first: the investigator's definitive cause leads, then the
+	// remediation steps — same composition order as every Slack adapter.
 	if d.Investigation != "" {
-		fmt.Fprintf(&b, "## Investigation\n\n%s\n\n", d.Investigation)
+		fmt.Fprintf(&b, "## Root cause\n\n%s\n\n", d.Investigation)
+	}
+	if d.Remediation != "" {
+		fmt.Fprintf(&b, "## Recommended action\n\n%s\n\n", d.Remediation)
 	}
 	fmt.Fprintf(&b, "---\n\nCluster: `%s` · Run: `%s` · Filed by CHA at %s",
 		cluster, runID, time.Now().UTC().Format(time.RFC3339))
