@@ -423,3 +423,33 @@ func readSpecHighlights(obj *unstructured.Unstructured, kind string) []string {
 func (e *LiveEnvironment) Logs(ctx context.Context, namespace, pod string, opts ai.LogsOptions) (ai.LogsResult, error) {
 	return ai.FetchPodLogs(ctx, e.logs, namespace, pod, opts), nil
 }
+
+// LatestPodByPrefix lists pods in the namespace and returns the name of the
+// most-recently-created one whose name starts with prefix, preferring pods
+// that are not Running/Succeeded (the failed instance an investigator wants).
+func (e *LiveEnvironment) LatestPodByPrefix(ctx context.Context, namespace, prefix string) (string, error) {
+	pods, err := e.src.List(ctx, snapshot.GVRPod, namespace)
+	if err != nil || pods == nil {
+		return "", nil // soft-fail: no logs path, investigation degrades to events
+	}
+	var bestName string
+	var bestTS string
+	var bestFailed bool
+	for i := range pods.Items {
+		p := &pods.Items[i]
+		name := p.GetName()
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		phase, _, _ := unstructured.NestedString(p.Object, "status", "phase")
+		failed := phase != "Running" && phase != "Succeeded"
+		ts := p.GetCreationTimestamp().UTC().Format(time.RFC3339Nano)
+		// Prefer a failed pod; among same-failed-state, prefer newest.
+		if bestName == "" ||
+			(failed && !bestFailed) ||
+			(failed == bestFailed && ts > bestTS) {
+			bestName, bestTS, bestFailed = name, ts, failed
+		}
+	}
+	return bestName, nil
+}

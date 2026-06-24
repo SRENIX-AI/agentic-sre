@@ -231,10 +231,16 @@ func (RuleBased) investigateDiagnostic(ctx context.Context, d diagnose.Diagnosti
 	if strings.HasPrefix(subj, "cert-expiry/") {
 		return investigateCertExpiry(ctx, subj, env)
 	}
+	// Pattern: CronJob/<ns>/<name> (CronJobStuck) — read the failed Job pod's
+	// logs and report WHY it keeps failing instead of a kubectl recipe.
+	if strings.HasPrefix(subj, "CronJob/") {
+		ns, name := parseKindNsName(subj)
+		return investigateCronJob(ctx, ns, name, msg, env)
+	}
 	// Crash-class pod findings (FailedPods, log-pattern crashes): read the
 	// container logs and classify the cause rather than punting to the human.
 	if isCrashClass(strings.ToLower(msg)) {
-		ns, pod := parsePodRef(subj) // subject is the reliable "Pod/<ns>/<pod>"
+		ns, pod := parseKindNsName(subj) // structured "Pod/<ns>/<pod>" subject
 		if ns == "" {
 			ns, pod = parsePodRef(msg)
 		}

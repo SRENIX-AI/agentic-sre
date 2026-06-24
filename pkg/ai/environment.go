@@ -52,6 +52,14 @@ type Environment interface {
 	// snapshot mode) return LogsResult{Error: ...} rather than a hard error,
 	// so the investigation pass degrades gracefully.
 	Logs(ctx context.Context, namespace, pod string, opts LogsOptions) (LogsResult, error)
+
+	// LatestPodByPrefix returns the name of the most-recently-created pod in
+	// the namespace whose name starts with prefix, preferring pods that are
+	// NOT Running/Succeeded (i.e. the failed one). It bridges findings that
+	// name a CONTROLLER (CronJob, Job, Deployment) to the pod whose logs hold
+	// the actual failure — CronJob "<name>" → pod "<name>-<job>-<pod>". Returns
+	// "" (no error) when no matching pod exists.
+	LatestPodByPrefix(ctx context.Context, namespace, prefix string) (string, error)
 }
 
 // LogsOptions tunes one pod-logs fetch.

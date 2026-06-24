@@ -25,8 +25,9 @@ type fakeEnv struct {
 	tlsResp  ai.TLSResult
 	desc     ai.DescribeResult
 	events   []ai.EventInfo
-	logsPrev ai.LogsResult // returned when LogsOptions.Previous
-	logsCur  ai.LogsResult // returned otherwise
+	logsPrev  ai.LogsResult // returned when LogsOptions.Previous
+	logsCur   ai.LogsResult // returned otherwise
+	latestPod string        // returned by LatestPodByPrefix
 }
 
 func (f *fakeEnv) DNSLookup(ctx context.Context, host string) (ai.DNSResult, error) {
@@ -56,6 +57,9 @@ func (f *fakeEnv) Logs(ctx context.Context, ns, pod string, opts ai.LogsOptions)
 		return f.logsPrev, nil
 	}
 	return f.logsCur, nil
+}
+func (f *fakeEnv) LatestPodByPrefix(ctx context.Context, ns, prefix string) (string, error) {
+	return f.latestPod, nil
 }
 
 func TestRuleBased_TLSExpiry(t *testing.T) {
@@ -253,5 +257,52 @@ func TestRuleBased_CrashLoop_LogsUnavailable_FallsBackToEvents(t *testing.T) {
 	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
 	if !strings.Contains(res.Summary, "BackOff") {
 		t.Errorf("expected event fallback; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_CronJobStuck_ReadsFailedPodLogs(t *testing.T) {
+	// CronJobStuck diagnostic → investigator finds the failed Job pod and
+	// reports the cause from its logs instead of a kubectl recipe.
+	env := &fakeEnv{
+		latestPod: "retention-sweep-29012345-abcde",
+		logsCur: ai.LogsResult{Lines: []string{
+			"connecting to db...",
+			"panic: dial tcp 10.0.0.5:5432: connect: connection refused",
+		}},
+	}
+	d := diagnose.Diagnostic{
+		Source:   "CronJobStuck",
+		Subject:  "CronJob/livekit-agents/retention-sweep",
+		Severity: "warning",
+		Message:  "CronJob livekit-agents/retention-sweep has not had a successful run in 152h.",
+	}
+	res, err := RuleBased{}.InvestigateDiagnostic(context.Background(), d, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Conclusion != ai.ConclusionRootCauseIdentified {
+		t.Errorf("conclusion: %q", res.Conclusion)
+	}
+	if !strings.Contains(res.Summary, "retention-sweep") {
+		t.Errorf("summary should name the cronjob; got %q", res.Summary)
+	}
+	if !strings.Contains(strings.ToLower(res.Summary), "panic") && !strings.Contains(res.Summary, "dependency") {
+		t.Errorf("summary should carry the log-derived cause; got %q", res.Summary)
+	}
+}
+
+func TestRuleBased_CronJobStuck_NoPod_FallsBackToEvents(t *testing.T) {
+	env := &fakeEnv{
+		latestPod: "", // pods GC'd
+		events:    []ai.EventInfo{{Reason: "BackoffLimitExceeded", Message: "Job has reached the specified backoff limit"}},
+	}
+	d := diagnose.Diagnostic{
+		Source:  "CronJobStuck",
+		Subject: "CronJob/ns/sweep", Severity: "warning",
+		Message: "CronJob ns/sweep has not had a successful run in 152h.",
+	}
+	res, _ := RuleBased{}.InvestigateDiagnostic(context.Background(), d, env)
+	if !strings.Contains(res.Summary, "BackoffLimitExceeded") {
+		t.Errorf("should fall back to events; got %q", res.Summary)
 	}
 }

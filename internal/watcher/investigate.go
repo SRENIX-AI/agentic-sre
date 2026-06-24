@@ -6,6 +6,7 @@ package watcher
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/investigator"
@@ -39,6 +40,10 @@ func (w *Watcher) investigateDiagnostics(ctx context.Context, diagnostics []diag
 		if cycleCtx.Err() != nil {
 			return out
 		}
+		// Skip info-level observations — they aren't worth a root-cause pass.
+		if strings.EqualFold(out[i].Severity, "info") {
+			continue
+		}
 		res, err := inv.InvestigateDiagnostic(cycleCtx, out[i], env)
 		if err != nil {
 			log.Printf("watcher: investigate diagnostic %s: %v", out[i].Subject, err)
@@ -70,7 +75,9 @@ func (w *Watcher) investigateProbeResults(ctx context.Context, results []probe.R
 				return results
 			}
 			f := results[ri].Findings[fi]
-			if f.Severity != probe.SeverityCritical {
+			// Investigate warning + critical; info findings are pure
+			// observations and aren't worth a root-cause pass.
+			if f.Severity == probe.SeverityInfo {
 				continue
 			}
 			res, err := inv.InvestigateFinding(cycleCtx, f, env)

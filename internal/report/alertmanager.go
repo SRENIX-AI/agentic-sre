@@ -90,8 +90,12 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 			continue
 		}
 		annotations := map[string]string{
-			"summary":     d.Message,
-			"remediation": d.Remediation,
+			"summary": d.Message,
+			// remediation leads with the Layer-2 investigator's definitive root
+			// cause when available, so receivers that render `remediation`
+			// (including a stock Alertmanager Slack template) show WHY the issue
+			// happened instead of a generic "go run kubectl" instruction.
+			"remediation": remediationWithRootCause(d),
 			// `silence_snippet` is a ready-to-run kubectl command an
 			// SRE can paste to suppress this exact finding-class for a
 			// bounded duration. Surfaces via the Silence CRD (Phase 1c)
@@ -101,6 +105,12 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 			// noise → silence. Bounded to 24h by default; SRE edits
 			// spec.until before applying.
 			"silence_snippet": buildSilenceSnippet(d, 24*time.Hour),
+		}
+		// Dedicated annotation so templates can render the root cause in its
+		// own block (e.g. {{ .Annotations.investigation }}). Populated by the
+		// Layer-2 investigator (rule-based in OSS, LLM in CHA-com).
+		if d.Investigation != "" {
+			annotations["investigation"] = d.Investigation
 		}
 		// AI tier annotations — populated only when CHA-com active.
 		// Alertmanager templates can reference {{ .Annotations.ai_enrichment }}
@@ -258,6 +268,21 @@ func silenceSnippetName(subject string) string {
 // creates a Silence CR matching the finding's exact subject for the
 // given duration. SREs paste this into a terminal to suppress noise.
 //
+// remediationWithRootCause leads the remediation text with the Layer-2
+// investigator's definitive root cause when one is available, so a receiver
+// that only renders `remediation` still shows WHY the issue occurred — not a
+// generic "go investigate" command. Falls back to the bare remediation (or the
+// root cause alone) when one side is empty.
+func remediationWithRootCause(d DeltaDiag) string {
+	if d.Investigation == "" {
+		return d.Remediation
+	}
+	if strings.TrimSpace(d.Remediation) == "" {
+		return "Root cause: " + d.Investigation
+	}
+	return "Root cause: " + d.Investigation + "\n\nNext steps: " + d.Remediation
+}
+
 // Matcher is `subject` (most specific) — silences ONLY this exact
 // finding, not the class. If the SRE wants to suppress a whole probe
 // they edit the spec.matcher block to use `source` instead.

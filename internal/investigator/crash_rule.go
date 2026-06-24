@@ -17,6 +17,19 @@ import (
 // like). Returns ("","") when no ns/name pair is present.
 var podRefRe = regexp.MustCompile(`([a-z0-9][a-z0-9-]*)/([a-z0-9][a-z0-9.-]*)`)
 
+// parseKindNsName splits a "Kind/namespace/name[/...]" finding SUBJECT into its
+// namespace + name. Unlike parsePodRef (which scans free-text messages and
+// anchors on "Pod "), this is for the structured subject — so "CronJob/ns/name"
+// yields ("ns","name"), not ("ob","ns") from the tail of "CronJob". Returns
+// ("","") when the subject lacks at least Kind/ns/name.
+func parseKindNsName(subject string) (namespace, name string) {
+	parts := strings.SplitN(subject, "/", 4)
+	if len(parts) < 3 {
+		return "", ""
+	}
+	return parts[1], parts[2]
+}
+
 func parsePodRef(msg string) (namespace, pod string) {
 	// Anchor on the word "Pod " when present so we don't grab an unrelated
 	// "a/b" token; fall back to the first ns/name pair otherwise.
@@ -96,6 +109,55 @@ func investigateCrash(ctx context.Context, ns, pod, originalMsg string, env ai.E
 	cause := classifyCrashLogs(logs.Lines)
 	res.Conclusion = ai.ConclusionRootCauseIdentified
 	res.Summary = fmt.Sprintf("%s/%s: %s", ns, pod, cause)
+	return res, nil
+}
+
+// investigateCronJob explains WHY a stuck CronJob keeps failing by reading the
+// logs of its most recent (failed) Job pod, instead of telling the operator to
+// go list jobs and tail logs by hand. CronJob "<name>" spawns Jobs that spawn
+// pods named "<name>-<job>-<pod>", so the pod is found by name prefix.
+func investigateCronJob(ctx context.Context, ns, name, originalMsg string, env ai.Environment) (ai.InvestigationResult, error) {
+	res := ai.InvestigationResult{}
+	if ns == "" || name == "" {
+		res.Conclusion = ai.ConclusionInsufficientData
+		return res, nil
+	}
+
+	pod, _ := env.LatestPodByPrefix(ctx, ns, name)
+	if pod == "" {
+		// No pod survives (GC'd) — fall back to CronJob events.
+		evs, _ := env.GetEvents(ctx, ns, "CronJob", name, 0)
+		res.Observations = append(res.Observations, ai.Observation{
+			Tool: "latest_pod", Args: fmt.Sprintf("%s/%s* (none found)", ns, name),
+		})
+		if len(evs) > 0 {
+			res.Conclusion = ai.ConclusionInsufficientData
+			res.Summary = fmt.Sprintf("CronJob %s/%s: no recent Job pod survives to read logs. Latest event: %s — %s.",
+				ns, name, evs[0].Reason, ai.RedactEventMessage(evs[0].Message))
+			return res, nil
+		}
+		res.Conclusion = ai.ConclusionInsufficientData
+		res.Summary = fmt.Sprintf("CronJob %s/%s has not succeeded, but no recent Job pod or event survives to determine why (pods likely garbage-collected; raise the Job's ttlSecondsAfterFinished or failedJobsHistoryLimit to retain them).", ns, name)
+		return res, nil
+	}
+
+	// Job pods are terminated, so current logs hold the last run's output.
+	logs, _ := env.Logs(ctx, ns, pod, ai.LogsOptions{Previous: false})
+	if logs.Error != "" || len(logs.Lines) == 0 {
+		logs, _ = env.Logs(ctx, ns, pod, ai.LogsOptions{Previous: true})
+	}
+	res.Observations = append(res.Observations, ai.Observation{
+		Tool: "pod_logs", Args: fmt.Sprintf("%s/%s (cronjob %s)", ns, pod, name),
+		Result: logsObsResult(logs),
+	})
+	if len(logs.Lines) == 0 {
+		res.Conclusion = ai.ConclusionInsufficientData
+		res.Summary = fmt.Sprintf("CronJob %s/%s last ran as pod %s but its logs are unavailable (%s).", ns, name, pod, logs.Error)
+		return res, nil
+	}
+	cause := classifyCrashLogs(logs.Lines)
+	res.Conclusion = ai.ConclusionRootCauseIdentified
+	res.Summary = fmt.Sprintf("CronJob %s/%s failing — last run (pod %s): %s", ns, name, pod, cause)
 	return res, nil
 }
 

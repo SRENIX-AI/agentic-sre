@@ -722,8 +722,13 @@ func (w *Watcher) runCycle(ctx context.Context) {
 	// Same applies to diagnostic-side investigation/enrichment, which is
 	// re-applied to the post-fix diagnostics here.
 	probeResults = w.investigateProbeResults(ctx, probeResults)
+	// Investigate diagnostics every cycle (not only when remediation is on) so
+	// analyzer findings — CronJobStuck, FailingExternalSecrets, etc. — carry a
+	// root cause in the alert instead of a kubectl recipe. The rule-based
+	// investigator returns instantly for findings it has no rule for, so this
+	// only spends time on the handful that match.
+	diagnostics = w.investigateDiagnostics(ctx, diagnostics)
 	if w.cfg.RunRemediation && w.mut != nil {
-		diagnostics = w.investigateDiagnostics(ctx, diagnostics)
 		diagnostics = w.enrichDiagnostics(ctx, diagnostics)
 	}
 
