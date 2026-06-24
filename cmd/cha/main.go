@@ -460,6 +460,7 @@ func watchCmd() *cobra.Command {
 		repeatInterval           time.Duration
 		criticalRepeatInterval   time.Duration
 		noChangeSlackDigest      bool
+		approvalDwellDuration    time.Duration
 		writeDriftReports        bool
 		remedy                   bool
 		dryRun                   bool
@@ -685,6 +686,7 @@ the post-fix cluster state.`,
 				RepeatInterval:         repeatInterval,
 				CriticalRepeatInterval: criticalRepeatInterval,
 				NoChangeSlackDigest:    noChangeSlackDigest,
+				ApprovalDwellDuration:  approvalDwellDuration,
 				WriteDriftReports:      writeDriftReports,
 				RunRemediation:         remedy,
 				DryRun:                 dryRun,
@@ -770,9 +772,10 @@ the post-fix cluster state.`,
 	c.Flags().StringVar(&slackAlerts, "slack-alerts", "", "Slack webhook for #ceph-alerts — CHA acted (auto-fixed issues); used as fallback when --alertmanager-url is not set")
 	c.Flags().StringVar(&slackCritical, "slack-critical", "", "Slack webhook for #ceph-critical — human action required; used as fallback when --alertmanager-url is not set")
 	c.Flags().BoolVar(&postOnResolved, "slack-post-on-resolved", true, "Post to Slack when a diagnostic resolves")
-	c.Flags().DurationVar(&repeatInterval, "slack-repeat-interval", 4*time.Hour, "Re-post still-active diagnostics at this interval (0 = never repeat). Applies to warning + info severities; critical uses --slack-critical-repeat-interval when set.")
-	c.Flags().DurationVar(&criticalRepeatInterval, "slack-critical-repeat-interval", 0, "Re-post still-active CRITICAL diagnostics at this interval (0 = use --slack-repeat-interval). Use to keep criticals loud (e.g. 4h) while warnings calm down (e.g. 24h).")
+	c.Flags().DurationVar(&repeatInterval, "slack-repeat-interval", 6*time.Hour, "Re-post still-active diagnostics at this interval (0 = never repeat). Applies to warning + info severities; critical uses --slack-critical-repeat-interval when set.")
+	c.Flags().DurationVar(&criticalRepeatInterval, "slack-critical-repeat-interval", 2*time.Hour, "Re-post still-active CRITICAL diagnostics at this interval (0 = use --slack-repeat-interval). Defaults to 2h so unresolved criticals stay loud on #ceph-critical while warnings calm down at --slack-repeat-interval (6h).")
 	c.Flags().BoolVar(&noChangeSlackDigest, "slack-no-change-digest", false, "On cycles with zero new findings + zero resolved transitions, replace the full re-post of stable findings with a compact '✨ No new issues since last cycle' digest. Default false to preserve byte-identical legacy behaviour.")
+	c.Flags().DurationVar(&approvalDwellDuration, "approval-dwell", 0, "How long a finding must persist before the watcher attaches Approve/Deny buttons. Transient findings that clear within the dwell window are never queued for human action. 0 = attach immediately (legacy). Recommended: 5m.")
 	c.Flags().BoolVar(&writeDriftReports, "write-driftreports", true, "Upsert DriftReport CRs on every cycle (live mode only)")
 	c.Flags().BoolVar(&remedy, "remedy", false, "Run auto-fixers after each diagnose cycle; post-fix state is reported")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "With --remedy: evaluate fixers without applying changes")

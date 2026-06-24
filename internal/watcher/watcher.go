@@ -142,6 +142,22 @@ type Config struct {
 	// the suppression doesn't hide real signal.
 	NoChangeSlackDigest bool
 
+	// ApprovalDwellDuration is how long a finding must continuously be
+	// present before the watcher attaches Approve/Deny buttons to its
+	// Slack message. During the dwell window the finding appears in Slack
+	// (for visibility) but without action buttons — operators see the
+	// issue without being asked to act until it's clear it won't self-resolve.
+	//
+	// Findings that clear before the dwell expires never generate an
+	// approval request, eliminating the "already resolved" Slack flood
+	// seen when many findings are transient. Self-resolved findings are
+	// reported normally via PostOnResolved.
+	//
+	// Zero disables the dwell gate: approval URLs attach immediately on
+	// the first cycle (legacy behaviour). Recommended: 5m for most
+	// clusters. Set via --approval-dwell or approval.dwellDuration Helm value.
+	ApprovalDwellDuration time.Duration
+
 	// PromTriggerURL is the Alertmanager base URL used by the M5 class-C
 	// trigger source. When set, the watcher spawns a goroutine that polls
 	// /api/v2/alerts every PromTriggerInterval and pushes a debounced
@@ -231,9 +247,14 @@ var watchedGVRs = []schema.GroupVersionResource{
 
 // seenEntry tracks the last-known fingerprint and Slack-post timestamp for one subject.
 type seenEntry struct {
-	fp          string
-	lastPosted  time.Time
-	subject     string
+	fp         string
+	lastPosted time.Time
+	// firstSeen is the wall-clock time of the first cycle this subject appeared.
+	// Used by the approval-dwell gate: Approve/Deny URLs are withheld until
+	// now-firstSeen >= Config.ApprovalDwellDuration, so transient findings
+	// never produce approval requests.
+	firstSeen time.Time
+	subject   string
 	severity    string
 	message     string
 	remediation string
@@ -834,6 +855,30 @@ func (w *Watcher) runDiagnose(ctx context.Context) ([]probe.Result, []diagnose.D
 			if dropped := before - len(diags); dropped > 0 {
 				log.Printf("watcher: silenced %d/%d diagnostics this cycle", dropped, before)
 			}
+			// Also apply the silence filter to probe results — without this,
+			// probe findings (Nodes, Ceph, PVCs, Endpoints) bypass Silence CRs
+			// entirely because silence.Filter only processes []diagnose.Diagnostic.
+			probeDropped := 0
+			for i := range results {
+				kept := results[i].Findings[:0:0]
+				for _, f := range results[i].Findings {
+					d := diagnose.Diagnostic{
+						Source:   results[i].Component.Component,
+						Subject:  "Probe/" + results[i].Component.Component + "/" + f.Component,
+						Severity: string(f.Severity),
+						Message:  f.Message,
+					}
+					if !silence.MatchesAny(sil, d, now) {
+						kept = append(kept, f)
+					} else {
+						probeDropped++
+					}
+				}
+				results[i].Findings = kept
+			}
+			if probeDropped > 0 {
+				log.Printf("watcher: silenced %d probe finding(s) this cycle", probeDropped)
+			}
 		} else {
 			log.Printf("watcher: silence list failed (filtering skipped this cycle): %v", err)
 		}
@@ -958,15 +1003,48 @@ func seenEntryToDeltaDiag(e *seenEntry) report.DeltaDiag {
 	}
 }
 
+// firstSeenFor returns the firstSeen timestamp from w.seen for subject, or
+// zero if the subject has no history. Called by attachApprovalURLs, which
+// runs without w.mu held, so this acquires the lock itself.
+func (w *Watcher) firstSeenFor(subject string) time.Time {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if e, ok := w.seen[subject]; ok {
+		return e.firstSeen
+	}
+	return time.Time{}
+}
+
 // attachApprovalURLs walks state and fills approvalURL from the watcher's
 // pendingURLs map for any seenEntry whose ProposedActionID is set.
 // Called between buildCurrentState and the Slack/AM emission so that the
 // rendered DeltaDiag carries the URL.
+//
+// Also stamps firstSeen on each entry (carried forward from history, or set
+// to now for brand-new findings) and gates approval URL attachment behind
+// Config.ApprovalDwellDuration: findings younger than the dwell window appear
+// in Slack without Approve/Deny buttons so transient findings self-resolve
+// without ever entering the human approval queue.
 func (w *Watcher) attachApprovalURLs(state map[string]*seenEntry) {
+	now := w.nowOrDefault()
+	dwell := w.cfg.ApprovalDwellDuration
+
 	for _, e := range state {
+		// Propagate firstSeen: carry forward the original timestamp from
+		// w.seen, or stamp now for findings appearing for the first time.
+		if prev := w.firstSeenFor(e.subject); !prev.IsZero() {
+			e.firstSeen = prev
+		} else {
+			e.firstSeen = now
+		}
+
 		if e.proposedActionID != "" {
-			if url := w.approvalURLFor(e.proposedActionID); url != "" {
-				e.approvalURL = url
+			// Gate: only attach Approve/Deny once the finding has persisted
+			// through the dwell window. Zero dwell = attach immediately (legacy).
+			if dwell <= 0 || now.Sub(e.firstSeen) >= dwell {
+				if url := w.approvalURLFor(e.proposedActionID); url != "" {
+					e.approvalURL = url
+				}
 			}
 		}
 		w.attachSilenceLinks(e)
@@ -1140,9 +1218,24 @@ func (w *Watcher) loadSeenFromDriftReports(ctx context.Context) {
 				}
 			}
 		}
+		// Restore firstSeen from the DriftReport's creation timestamp so that
+		// the dwell gate correctly treats pre-existing findings as already past
+		// the dwell window after a pod restart.
+		firstSeen := time.Time{}
+		if metadata, _ := obj["metadata"].(map[string]interface{}); metadata != nil {
+			if ct, _ := metadata["creationTimestamp"].(string); ct != "" {
+				if t, err := time.Parse(time.RFC3339, ct); err == nil {
+					firstSeen = t
+				}
+			}
+		}
+		if firstSeen.IsZero() {
+			firstSeen = lastPosted // fall back so dwell is still considered passed
+		}
 		w.seen[subject] = &seenEntry{
 			fp:          fingerprint(subject, severity, message),
 			lastPosted:  lastPosted,
+			firstSeen:   firstSeen,
 			subject:     subject,
 			severity:    severity,
 			message:     message,

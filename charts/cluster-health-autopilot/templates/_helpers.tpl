@@ -252,6 +252,12 @@ no-target list cycle on clusters that don't host the asset class.
   value: "off"
 {{- end }}
 {{- end }}
+{{- if (.Values.analyzers).failedPods }}
+{{- if not .Values.analyzers.failedPods.enabled }}
+- name: CHA_ANALYZER_FAILED_PODS
+  value: "off"
+{{- end }}
+{{- end }}
 {{- if (.Values.analyzers).certExpiry }}
 {{- if not .Values.analyzers.certExpiry.enabled }}
 - name: CHA_ANALYZER_CERT_EXPIRY

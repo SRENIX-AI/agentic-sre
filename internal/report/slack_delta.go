@@ -127,12 +127,12 @@ func FormatSlackDelta(
 			if d.Remediation != "" {
 				fmt.Fprintf(&b, "  _→ %s_\n", d.Remediation)
 			}
-			// Silence affordance: signed one-click links when the watcher
-			// minted them (signer + approval base URL configured), else
-			// the kubectl heredoc fallback so air-gapped installs keep a
-			// way to mute THIS finding. Shared with the routing.go live
-			// renderer (renderSilenceSnippet) so both stay in sync.
-			renderSilenceSnippet(&b, d)
+			// Silence affordance: only for findings that have been present
+			// for at least one cycle. A brand-new problem should be
+			// investigated, not immediately silenced.
+			if !d.IsNewThisCycle {
+				renderSilenceSnippet(&b, d)
+			}
 			if d.Investigation != "" {
 				fmt.Fprintf(&b, "  🔬 _%s_\n", d.Investigation)
 			}
