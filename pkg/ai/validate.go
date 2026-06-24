@@ -32,6 +32,10 @@ var ProtectedNamespaces = map[string]struct{}{
 	// loss. Never propose policies here.
 	"calico-system":   {},
 	"tigera-operator": {},
+	// CHA's own namespace — never auto-act on ourselves. Deleting the
+	// watcher/aiwatch/approval-server pods is self-disruption and a probe
+	// blip on a standby replica must not trigger a proposal to delete it.
+	"cluster-health-autopilot": {},
 }
 
 // IsProtectedNamespace reports whether ns is on the no-touch list —

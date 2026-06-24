@@ -103,15 +103,13 @@ func (a CronJobStuck) Run(ctx context.Context, src snapshot.Source) []Diagnostic
 				"  kubectl -n " + ns + " patch cronjob " + name + " --type=merge -p '{\"spec\":{\"suspend\":false}}'"
 			severity = "warning"
 		case lastSuccess.IsZero() && cj.GetCreationTimestamp().Time.Before(now.Add(-overdue)):
-			reason = "has NEVER had a successful run since creation. Inspect the most recent Job to see why:\n\n" +
-				"  kubectl -n " + ns + " describe cronjob " + name + "\n" +
-				"  kubectl -n " + ns + " get jobs -l job-name --sort-by=.metadata.creationTimestamp"
+			// The Layer-2 investigator reads the latest Job's logs/events/status
+			// and reports the actual failure — no kubectl recipe needed here.
+			reason = "has NEVER had a successful run since creation."
 			severity = "critical"
 		case !lastSuccess.IsZero() && now.Sub(lastSuccess) > overdue:
 			ago := now.Sub(lastSuccess).Truncate(time.Hour)
-			reason = fmt.Sprintf("has not had a successful run in %s. The schedule is `%s`. Check the most recent failed Job:\n\n"+
-				"  kubectl -n %s get jobs -l job-name --sort-by=.metadata.creationTimestamp | tail -5\n"+
-				"  kubectl -n %s logs job/<latest> --tail=200", ago, schedule, ns, ns)
+			reason = fmt.Sprintf("has not had a successful run in %s (schedule `%s`).", ago, schedule)
 			severity = "warning"
 		case !lastSchedule.IsZero() && now.Sub(lastSchedule) > overdue && lastSuccess.IsZero():
 			ago := now.Sub(lastSchedule).Truncate(time.Hour)
