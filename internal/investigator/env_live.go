@@ -329,7 +329,12 @@ func readCommonStatus(obj *unstructured.Unstructured) (status, reason, msg strin
 	if v, _, _ := unstructured.NestedString(obj.Object, "status", "phase"); v != "" {
 		status = v
 	}
-	// status.conditions[Ready] (most controller-managed resources)
+	// status.conditions — prefer a Ready condition (most controller-managed
+	// resources), but fall back to a terminal Job-style condition. A failed
+	// Job records its cause as `type: Failed, status: True, reason:
+	// DeadlineExceeded|BackoffLimitExceeded` — there is NO Ready condition and
+	// no top-level status.reason, so without this the investigator misses the
+	// one field that names why a CronJob's runs keep failing.
 	conds, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
 	for _, raw := range conds {
 		cm, ok := raw.(map[string]any)
@@ -347,6 +352,39 @@ func readCommonStatus(obj *unstructured.Unstructured) (status, reason, msg strin
 				msg = m
 			}
 			break
+		}
+	}
+	// Terminal Job/batch conditions (only when a Ready condition didn't
+	// already supply a reason). Failed wins over Complete — a failure cause is
+	// what the operator needs.
+	if reason == "" {
+		for _, want := range []string{"Failed", "Complete"} {
+			for _, raw := range conds {
+				cm, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				if cm["type"] != want {
+					continue
+				}
+				s, _ := cm["status"].(string)
+				if s != "True" {
+					continue
+				}
+				if status == "" {
+					status = want + "=True"
+				}
+				if r, ok := cm["reason"].(string); ok && r != "" {
+					reason = r
+				}
+				if m, ok := cm["message"].(string); ok && m != "" {
+					msg = m
+				}
+				break
+			}
+			if reason != "" {
+				break
+			}
 		}
 	}
 	// Top-level status.reason / status.message — where rejected / Failed-phase
