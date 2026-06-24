@@ -243,20 +243,59 @@ func TestRuleBased_CrashLoop_OOM(t *testing.T) {
 	}
 }
 
-func TestRuleBased_CrashLoop_LogsUnavailable_FallsBackToEvents(t *testing.T) {
+func TestRuleBased_ImagePull_SurfacesPullErrorEvent(t *testing.T) {
+	// No logs (image never pulled) → surface the informative Failed event
+	// (manifest unknown), not the generic BackOff.
 	env := &fakeEnv{
-		logsPrev: ai.LogsResult{Error: "previous terminated container not found"},
-		logsCur:  ai.LogsResult{Error: "container is waiting to start"},
+		logsPrev: ai.LogsResult{Error: "container is waiting to start: ImagePullBackOff"},
+		logsCur:  ai.LogsResult{Error: "container is waiting to start: ImagePullBackOff"},
+		events: []ai.EventInfo{
+			{Reason: "BackOff", Message: "Back-off pulling image"},
+			{Reason: "Failed", Message: "Failed to pull image \"x:latest\": manifest unknown"},
+		},
+	}
+	f := probe.Finding{
+		Component: "CrashLoopBackOff", Severity: probe.SeverityCritical,
+		Message: "Pod prod/api-7f matched pattern ImagePullBackOff",
+	}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if !strings.Contains(res.Summary, "manifest unknown") {
+		t.Errorf("should surface the pull-error event; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_RejectedPod_UsesStatusCause(t *testing.T) {
+	// No logs (pod rejected) → surface the status rejection reason from describe.
+	env := &fakeEnv{
+		logsPrev: ai.LogsResult{Error: "terminated"},
+		logsCur:  ai.LogsResult{Error: "terminated"},
+		desc:     ai.DescribeResult{Reason: "UnexpectedAdmissionError", Message: "Pod was rejected: Allocate failed — nvidia.com/gpu unavailable"},
+	}
+	f := probe.Finding{
+		Component: "FailedPods", Severity: probe.SeverityCritical,
+		Message: "Pod prod/gpu-job is in terminal Failed phase (reason=UnexpectedAdmissionError)",
+	}
+	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
+	if !strings.Contains(res.Summary, "nvidia.com/gpu") {
+		t.Errorf("should surface the GPU rejection cause; got: %q", res.Summary)
+	}
+}
+
+func TestRuleBased_GenericBackOff_StaysSilent(t *testing.T) {
+	// No logs, no status cause, only a generic BackOff event that adds nothing →
+	// stay SILENT rather than emit a misleading "couldn't determine" line.
+	env := &fakeEnv{
+		logsPrev: ai.LogsResult{Error: "terminated"},
+		logsCur:  ai.LogsResult{Error: "terminated"},
 		events:   []ai.EventInfo{{Reason: "BackOff", Message: "Back-off restarting failed container"}},
 	}
 	f := probe.Finding{
-		Component: "CrashLoopBackOff",
-		Severity:  probe.SeverityCritical,
-		Message:   "Pod prod/api-7f in CrashLoopBackOff (3 restarts)",
+		Component: "CrashLoopBackOff", Severity: probe.SeverityCritical,
+		Message: "Pod prod/api-7f in CrashLoopBackOff (3 restarts)",
 	}
 	res, _ := RuleBased{}.InvestigateFinding(context.Background(), f, env)
-	if !strings.Contains(res.Summary, "BackOff") {
-		t.Errorf("expected event fallback; got: %q", res.Summary)
+	if res.Summary != "" {
+		t.Errorf("generic BackOff should not produce a root-cause line; got: %q", res.Summary)
 	}
 }
 

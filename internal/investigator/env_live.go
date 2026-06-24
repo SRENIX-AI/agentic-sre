@@ -349,6 +349,16 @@ func readCommonStatus(obj *unstructured.Unstructured) (status, reason, msg strin
 			break
 		}
 	}
+	// Top-level status.reason / status.message — where rejected / Failed-phase
+	// pods record the cause (admission + scheduling failures, e.g. "Pod was
+	// rejected: Allocate failed ... nvidia.com/gpu unavailable"). These do NOT
+	// appear in a Ready condition, so the investigator would otherwise miss them.
+	if reason == "" {
+		reason, _, _ = unstructured.NestedString(obj.Object, "status", "reason")
+	}
+	if msg == "" {
+		msg, _, _ = unstructured.NestedString(obj.Object, "status", "message")
+	}
 	return
 }
 

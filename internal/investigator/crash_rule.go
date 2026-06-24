@@ -50,11 +50,13 @@ func parsePodRef(msg string) (namespace, pod string) {
 func isCrashClass(low string) bool {
 	for _, k := range []string{
 		"crashloopbackoff",
+		"imagepullbackoff", // LogPatternMatcher renders "matched pattern ImagePullBackOff"
+		"errimagepull",
+		"error pulling image",
 		"terminal failed phase",
 		"oomkilled",
 		"runcontainererror",
 		"createcontainererror",
-		"error pulling image", // ImagePull paths still benefit from log/event context
 	} {
 		if strings.Contains(low, k) {
 			return true
@@ -87,22 +89,51 @@ func investigateCrash(ctx context.Context, ns, pod, originalMsg string, env ai.E
 		Result: logsObsResult(logs),
 	})
 
-	// When logs are genuinely unavailable, fall back to events so the alert
-	// still carries SOMETHING the operator didn't have to fetch.
+	// No logs — the pod never started: it was rejected (admission/scheduling)
+	// or can't pull its image. The cause lives in the pod's STATUS or its
+	// EVENTS, not in logs. Reading the right source is what separates a useful
+	// answer from "couldn't determine".
 	if len(logs.Lines) == 0 {
-		evs, _ := env.GetEvents(ctx, ns, "Pod", pod, 0)
-		if len(evs) > 0 {
+		// 1) Pod status carries admission/scheduling rejection reasons
+		//    (e.g. "Pod was rejected: Allocate failed ... nvidia.com/gpu
+		//    unavailable"). If the finding MESSAGE already states this, the
+		//    message speaks for itself — stay silent rather than repeat it.
+		desc, _ := env.Describe(ctx, "Pod", ns, pod)
+		statusCause := strings.TrimSpace(desc.Message)
+		if statusCause == "" {
+			statusCause = strings.TrimSpace(desc.Reason)
+		}
+		if statusCause != "" {
 			res.Observations = append(res.Observations, ai.Observation{
-				Tool: "get_events", Args: fmt.Sprintf("%s/%s", ns, pod),
-				Result: evs[0].Reason + ": " + evs[0].Message,
+				Tool: "describe", Args: fmt.Sprintf("%s/%s", ns, pod), Result: clip(statusCause, 200),
 			})
-			res.Conclusion = ai.ConclusionInsufficientData
-			res.Summary = fmt.Sprintf("Could not read logs for %s/%s (%s). Most recent event: %s — %s.",
-				ns, pod, logs.Error, evs[0].Reason, ai.RedactEventMessage(evs[0].Message))
+			if messageAlreadyExplains(originalMsg, statusCause) {
+				// The finding message already carries the cause; don't append
+				// a redundant (or contradicting) root-cause line.
+				res.Conclusion = ai.ConclusionRootCauseIdentified
+				return res, nil
+			}
+			res.Conclusion = ai.ConclusionRootCauseIdentified
+			res.Summary = fmt.Sprintf("%s/%s rejected: %s", ns, pod, clip(statusCause, 240))
 			return res, nil
 		}
+
+		// 2) Events carry image-pull failures (manifest unknown / 401 / not
+		//    found). Pick the most informative failure event, not just the
+		//    newest (which is often a generic "BackOff").
+		if ev := informativeFailureEvent(ctx, env, ns, pod); ev != "" {
+			res.Observations = append(res.Observations, ai.Observation{
+				Tool: "get_events", Args: fmt.Sprintf("%s/%s", ns, pod), Result: clip(ev, 200),
+			})
+			res.Conclusion = ai.ConclusionRootCauseIdentified
+			res.Summary = fmt.Sprintf("%s/%s: %s", ns, pod, clip(ev, 240))
+			return res, nil
+		}
+
+		// 3) Nothing concrete beyond the finding message — stay SILENT. Emitting
+		//    "could not determine" contradicts a self-explanatory message and
+		//    makes CHA look like it failed to investigate.
 		res.Conclusion = ai.ConclusionInsufficientData
-		res.Summary = fmt.Sprintf("Could not read logs for %s/%s (%s) and no recent events found.", ns, pod, logs.Error)
 		return res, nil
 	}
 
@@ -110,6 +141,52 @@ func investigateCrash(ctx context.Context, ns, pod, originalMsg string, env ai.E
 	res.Conclusion = ai.ConclusionRootCauseIdentified
 	res.Summary = fmt.Sprintf("%s/%s: %s", ns, pod, cause)
 	return res, nil
+}
+
+// messageAlreadyExplains reports whether the finding message already conveys the
+// status cause (so the investigator shouldn't repeat it). Compares on a
+// distinctive slice of the cause to tolerate truncation/whitespace differences.
+func messageAlreadyExplains(message, cause string) bool {
+	cause = strings.TrimSpace(cause)
+	if cause == "" {
+		return false
+	}
+	probe := cause
+	if len(probe) > 40 {
+		probe = probe[:40]
+	}
+	return strings.Contains(strings.ToLower(message), strings.ToLower(probe))
+}
+
+// informativeFailureEvent returns the most useful failure event for a pod that
+// produced no logs: a "Failed" event (or one carrying image-pull / error
+// keywords) in preference to a generic "BackOff"/"Pulling" line. Empty when no
+// event adds information.
+func informativeFailureEvent(ctx context.Context, env ai.Environment, ns, pod string) string {
+	evs, _ := env.GetEvents(ctx, ns, "Pod", pod, 0)
+	keywords := []string{"manifest unknown", "not found", "unauthorized", "401", "403",
+		"denied", "no such host", "forbidden", "exceeded", "invalid", "failed to pull"}
+	var best string
+	for _, e := range evs {
+		low := strings.ToLower(e.Reason + " " + e.Message)
+		// Strongest signal: a Failed event that names a concrete cause.
+		if strings.EqualFold(e.Reason, "Failed") || containsAny(low, keywords) {
+			return e.Reason + ": " + ai.RedactEventMessage(e.Message)
+		}
+		if best == "" && e.Reason != "BackOff" && e.Reason != "Pulling" {
+			best = e.Reason + ": " + ai.RedactEventMessage(e.Message)
+		}
+	}
+	return best
+}
+
+func containsAny(s string, subs []string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // investigateCronJob explains WHY a stuck CronJob keeps failing by reading the
