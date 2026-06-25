@@ -17,14 +17,14 @@ import (
 // fakeEnv implements ai.Environment with hard-coded responses for each tool.
 // Tests construct one per scenario and assert the rule engine's output.
 type fakeEnv struct {
-	dns      ai.DNSResult
-	dnsErr   error
-	httpResp ai.HTTPProbeResult
-	httpAlt  ai.HTTPProbeResult // returned on second HTTP call
-	httpN    int
-	tlsResp  ai.TLSResult
-	desc     ai.DescribeResult
-	events   []ai.EventInfo
+	dns       ai.DNSResult
+	dnsErr    error
+	httpResp  ai.HTTPProbeResult
+	httpAlt   ai.HTTPProbeResult // returned on second HTTP call
+	httpN     int
+	tlsResp   ai.TLSResult
+	desc      ai.DescribeResult
+	events    []ai.EventInfo
 	logsPrev  ai.LogsResult // returned when LogsOptions.Previous
 	logsCur   ai.LogsResult // returned otherwise
 	latestPod string        // returned by LatestByPrefix(kind=Pod)
@@ -64,6 +64,43 @@ func (f *fakeEnv) LatestByPrefix(ctx context.Context, kind, ns, prefix string) (
 		return f.latestJob, nil
 	}
 	return f.latestPod, nil
+}
+
+// A stuck CronJob whose latest Job is still ACTIVE (no terminal condition)
+// because its pod can't start — CreateContainerConfigError on a missing Secret
+// key. The cause lives in the pod's container waiting reason, NOT the Job's
+// conditions; the investigator must surface it instead of the "can't be read"
+// fallback. Reproduces livekit-agents/retention-sweep (2026-06-25).
+func TestInvestigateCronJob_PodCantStart_MissingSecretKey(t *testing.T) {
+	env := &fakeEnv{
+		latestPod: "retention-sweep-29705880-smz9z",
+		// Pod never started → no logs.
+		logsCur:  ai.LogsResult{},
+		logsPrev: ai.LogsResult{},
+		desc: ai.DescribeResult{
+			Notes: []string{
+				"container web waiting: CreateContainerConfigError — couldn't find key postgres_database_url in Secret livekit-agents/agency-api-secrets",
+			},
+		},
+	}
+	d := diagnose.Diagnostic{
+		Source:  "CronJobStuck",
+		Subject: "CronJob/livekit-agents/retention-sweep",
+		Message: "CronJob livekit-agents/retention-sweep has not had a successful run in 172h0m0s (schedule 0 2 * * *).",
+	}
+	r, err := RuleBased{}.InvestigateDiagnostic(context.Background(), d, env)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if r.Conclusion != ai.ConclusionRootCauseIdentified {
+		t.Fatalf("expected root_cause_identified; got %s (summary=%q)", r.Conclusion, r.Summary)
+	}
+	if !strings.Contains(r.Summary, "couldn't find key postgres_database_url") {
+		t.Errorf("summary must name the missing secret key, not the 'can't be read' fallback; got %q", r.Summary)
+	}
+	if strings.Contains(r.Summary, "can't be read") || strings.Contains(r.Summary, "garbage-collected") {
+		t.Errorf("must NOT fall through to the can't-be-read fallback; got %q", r.Summary)
+	}
 }
 
 func TestRuleBased_TLSExpiry(t *testing.T) {

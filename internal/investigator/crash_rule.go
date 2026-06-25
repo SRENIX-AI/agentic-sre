@@ -263,6 +263,27 @@ func investigateCronJob(ctx context.Context, ns, name, originalMsg string, env a
 			res.Summary = fmt.Sprintf("CronJob %s/%s failing — last run (pod %s): %s", ns, name, pod, classifyCrashLogs(logs.Lines))
 			return res, nil
 		}
+
+		// 1b) The pod exists but produced NO logs — it never started. This is a
+		//     START failure (CreateContainerConfigError on a missing Secret/
+		//     ConfigMap key, image-pull, admission rejection). The cause lives in
+		//     the container's waiting reason/message, NOT the Job's conditions —
+		//     and the latest Job is often still `active` (no terminal condition)
+		//     while it retries, so step 2 below sees nothing. Read it here the
+		//     same way investigateCrash does, before falling through.
+		desc, _ := env.Describe(ctx, "Pod", ns, pod)
+		if wmsg := containerWaitingCause(desc.Notes); wmsg != "" {
+			res.Observations = append(res.Observations, ai.Observation{Tool: "describe", Args: ns + "/" + pod, Result: clip(wmsg, 200)})
+			res.Conclusion = ai.ConclusionRootCauseIdentified
+			res.Summary = fmt.Sprintf("CronJob %s/%s failing — last run (pod %s) can't start: %s", ns, name, pod, clip(wmsg, 280))
+			return res, nil
+		}
+		if ev := informativeFailureEvent(ctx, env, ns, pod); ev != "" {
+			res.Observations = append(res.Observations, ai.Observation{Tool: "get_events", Args: ns + "/" + pod, Result: clip(ev, 200)})
+			res.Conclusion = ai.ConclusionRootCauseIdentified
+			res.Summary = fmt.Sprintf("CronJob %s/%s failing — last run (pod %s): %s", ns, name, pod, clip(ev, 240))
+			return res, nil
+		}
 	}
 
 	// 2) Pods garbage-collected — the JOB outlives them and records WHY it
