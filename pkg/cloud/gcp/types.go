@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -129,7 +129,7 @@ type BackendService struct {
 	// backend service directly). Optional: empty when unmapped
 	// (including snapshot files captured before this field existed) —
 	// the probe then falls back to the backend-service name for the
-	// "(lb: ...)" message join key CHA-com's RCA matchers parse.
+	// "(lb: ...)" message join key Srenix Enterprise's RCA matchers parse.
 	ForwardingRule string `json:"forwardingRule,omitempty"`
 }
 

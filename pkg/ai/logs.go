@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -15,7 +15,7 @@ import (
 
 // FetchPodLogs streams the tail of a pod container's logs and returns them as a
 // redacted LogsResult. It is the shared implementation behind every
-// Environment.Logs() — the OSS LiveEnvironment and the CHA-com aiwatch env both
+// Environment.Logs() — the OSS LiveEnvironment and the Srenix Enterprise aiwatch env both
 // delegate here so the streaming + redaction behaviour can't drift between the
 // free and paid investigators.
 //

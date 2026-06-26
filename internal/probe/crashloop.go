@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -9,13 +9,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // CrashLoopBackOff catches pods stuck in CrashLoopBackOff anywhere in the
 // cluster, not just on the hardcoded critical-services list. The Services
-// probe only watches workloads CHA was told about; this probe catches the
+// probe only watches workloads Srenix was told about; this probe catches the
 // rest.
 //
 // Severity scaling:

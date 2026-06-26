@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -14,8 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/ticketing"
 )
 
 // TicketingConfig bundles ticket-sink runtime knobs that are not
@@ -31,7 +31,7 @@ type TicketingConfig struct {
 	Cluster string
 
 	// Labels are merged into every Ticket.Labels. Typical values:
-	// ["cha", "auto-filed"].
+	// ["srenix", "auto-filed"].
 	Labels []string
 
 	// ResolveOnClear toggles auto-closing a ticket when its underlying
@@ -43,7 +43,7 @@ type TicketingConfig struct {
 
 	// CommentInterval is the debounce window for comment-on-recurrence.
 	// When a previously-ticketed finding reappears (recurs) — whether the
-	// ticket is still open or was already resolved — CHA adds a comment to
+	// ticket is still open or was already resolved — Srenix adds a comment to
 	// the existing ticket instead of opening a new one, but no more often
 	// than once per CommentInterval. Zero disables recurrence commenting
 	// (the already-ticketed path stays a no-op, matching M1). Typical
@@ -56,11 +56,11 @@ type TicketingConfig struct {
 	// Findings below the floor never open a ticket and never re-comment on
 	// one. Values: "info" (everything), "warning" (warning+critical),
 	// "critical" (critical only — the default the wiring layer sets, since
-	// critical is CHA's human-action / unfixable tier). Empty = "critical".
+	// critical is Srenix's human-action / unfixable tier). Empty = "critical".
 	MinSeverity string
 }
 
-// ticketSeverityRank maps a CHA severity to a comparable rank. Unknown
+// ticketSeverityRank maps a Srenix severity to a comparable rank. Unknown
 // severities sort as warning (the historical default for empty-severity
 // diagnostics) so a stray value is never silently treated as critical.
 func ticketSeverityRank(s string) int {
@@ -212,7 +212,7 @@ func buildTicketBody(d DeltaDiag, cluster, runID string) string {
 	if d.Remediation != "" {
 		fmt.Fprintf(&b, "## Recommended action\n\n%s\n\n", d.Remediation)
 	}
-	fmt.Fprintf(&b, "---\n\nCluster: `%s` · Run: `%s` · Filed by CHA at %s",
+	fmt.Fprintf(&b, "---\n\nCluster: `%s` · Run: `%s` · Filed by Srenix at %s",
 		cluster, runID, time.Now().UTC().Format(time.RFC3339))
 	return b.String()
 }

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
 )
 
 // DeltaDiag is the CANONICAL alert model for the report layer. Every delivery
@@ -47,7 +47,7 @@ type DeltaDiag struct {
 	// the OSS rule-based investigator or any registered pkg/ai.Investigator.
 	Investigation string
 
-	// AI tier fields — optional, populated only when CHA-com's AI tier
+	// AI tier fields — optional, populated only when Srenix Enterprise's AI tier
 	// is active. OSS deployments never see these set.
 
 	// Enrichment is the LLM-generated narrative addendum (T0+).
@@ -69,8 +69,8 @@ type DeltaDiag struct {
 	// IMPORTANT: in v1.21.0 these fields are render-only on the OSS
 	// watcher path — the OSS internal/watcher/enrich pipeline does NOT
 	// yet mint class-action JWTs (the class_token signer lives in
-	// CHA-com's ai/approval package). The CHA-com aiwatch emits class
-	// buttons via its OWN renderer (cmd/cha-com/render.go), which IS
+	// Srenix Enterprise's ai/approval package). The Srenix Enterprise aiwatch emits class
+	// buttons via its OWN renderer (cmd/srenix-enterprise/render.go), which IS
 	// fully wired and verified live since v1.16.0. These fields land
 	// here so a future OSS hook (or a shared signer extraction) can
 	// populate them without re-touching the render path; until then
@@ -167,7 +167,7 @@ func FormatSlackDelta(
 	now := time.Now().UTC()
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "*Cluster Health Autopilot — Watch* — %s\n", now.Format("2006-01-02 15:04:05 UTC"))
+	fmt.Fprintf(&b, "*Agentic SRE — Watch* — %s\n", now.Format("2006-01-02 15:04:05 UTC"))
 
 	if len(newOrChanged) > 0 {
 		fmt.Fprintf(&b, "\n*🔔 Active Issues (%d):*\n", len(newOrChanged))
@@ -187,7 +187,7 @@ func FormatSlackDelta(
 			}
 			if d.ApprovalURL != "" {
 				// Render symmetric Approve / Deny pair. The deny URL
-				// shares the JTI with approve (cha-com #17 symmetric
+				// shares the JTI with approve (srenix-enterprise #17 symmetric
 				// one-shot tokens) — whichever the SRE clicks first
 				// wins, the other is burned. Denial records a RAG
 				// outcome so the proposer learns from rejections.
@@ -201,7 +201,7 @@ func FormatSlackDelta(
 				// The class-scoped Silence link is rendered above by
 				// renderSilenceSnippet (SilenceClassLongURL, configurable
 				// duration). To keep EXACTLY ONE class silence link, the
-				// legacy cha-com SilenceClassURL is only emitted here when
+				// legacy srenix-enterprise SilenceClassURL is only emitted here when
 				// the OSS long link is absent — and labelled with the
 				// configurable long duration, never the old hardcoded 7d.
 				renderClassSilence := d.SilenceClassURL != "" && d.SilenceClassLongURL == ""
@@ -250,7 +250,7 @@ func FormatSlackDelta(
 	}
 
 	color := attachmentColor(newOrChanged, resolved)
-	footer := "K8s Cluster Health Autopilot — Watch mode"
+	footer := "K8s Agentic SRE — Watch mode"
 	if autopilot {
 		footer += " (auto-remediation: ON)"
 	}

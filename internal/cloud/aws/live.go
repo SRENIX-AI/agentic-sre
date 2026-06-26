@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -28,13 +28,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	smithy "github.com/aws/smithy-go"
 
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
 )
 
 // LiveClient wraps aws-sdk-go-v2 with one service client per resource
-// type CHA probes. Auth flows through aws-sdk-go-v2's default
+// type Srenix probes. Auth flows through aws-sdk-go-v2's default
 // credential chain: env vars → shared config → IRSA (Web Identity
-// Token) → EC2/ECS instance metadata. For the in-cluster CHA
+// Token) → EC2/ECS instance metadata. For the in-cluster Srenix
 // Deployment, IRSA is the default; the Helm chart annotates the
 // ServiceAccount with the role-arn the operator configures.
 type LiveClient struct {
@@ -303,7 +303,7 @@ func (c *LiveClient) DescribeALBTargetGroupsWithHealth(ctx context.Context) ([]p
 	}
 	// One DescribeLoadBalancers per probe cycle (NOT per target group)
 	// builds the ARN → DNS-name map that feeds LoadBalancerDNS — the
-	// CHA-com "(lb: ...)" RCA join key. Best-effort: a failure leaves
+	// Srenix Enterprise "(lb: ...)" RCA join key. Best-effort: a failure leaves
 	// the map empty (message enrichment is never worth failing the
 	// probe over) and the probe omits the suffix.
 	dnsByARN := c.describeLoadBalancerDNS(ctx)

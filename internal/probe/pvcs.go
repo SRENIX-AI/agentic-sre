@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package probe
@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 )
 
 // PVCs ports probe_pvcs from cluster-health-report.sh:276-293.

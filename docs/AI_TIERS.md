@@ -1,9 +1,9 @@
 # AI Tiers — Definitive Specification (v1.5.x)
 
 This document is the single source of truth for the AI tiers shipped in
-CHA-com. The tier family is **T0 → T1 → T2 → T3**, with a sibling
+Srenix Enterprise. The tier family is **T0 → T1 → T2 → T3**, with a sibling
 **Layer-2 Investigator** tier that ships in OSS as a deterministic
-rule-based implementation and in CHA-com as an LLM-backed override.
+rule-based implementation and in Srenix Enterprise as an LLM-backed override.
 Operators reference this when sizing budgets, picking a deployment
 posture, or reasoning about blast radius.
 
@@ -37,12 +37,12 @@ response. Every mutation passes through:
 6. **Executor** re-runs admission policy (defense in depth).
 7. **OPA/Gatekeeper** (optional third gate) independently validates.
 8. **snapshot.Mutator** applies the mutation — same code path that
-   today's `cha remediate --live` uses.
+   today's `srenix remediate --live` uses.
 
 Higher tiers grow *coverage* (what kinds of issues the AI can analyze
 and propose), not *autonomy*.
 
-**One opt-in exception:** the `cha-com watch` loop ships a
+**One opt-in exception:** the `srenix-enterprise watch` loop ships a
 confidence-gated **auto-apply** tier (`--autonomy`). It is **off by
 default** — when unset, the cardinal rule holds exactly as stated above.
 When an operator explicitly enables it, a narrow class of *reversible,
@@ -137,11 +137,11 @@ Layer-2 is the sibling of T0: both are read-only and additive. The
 difference is that T0 asks an LLM to *narrate* what the diagnostic
 already says; Layer-2 *gathers fresh evidence* via deterministic tools
 and synthesizes a conclusion. The OSS implementation is rule-based
-(no LLM); the paid CHA-com binary replaces it with an LLM-backed
+(no LLM); the paid Srenix Enterprise binary replaces it with an LLM-backed
 **deep-RCA investigator** that extends the closed Environment surface
 with optional Firecrawl web research.
 
-**CHA-com deep-RCA investigator (v0.2.0-alpha.1, paid)**: The
+**Srenix Enterprise deep-RCA investigator (v0.2.0-alpha.1, paid)**: The
 `ai/investigator.go:LLMInvestigator` replaces the rule-based
 investigator when the AI tier is enabled. It:
 
@@ -159,7 +159,7 @@ investigator when the AI tier is enabled. It:
    [THREAT_MODEL_AI.md](THREAT_MODEL_AI.md) for the egress threat model.
 4. Synthesizes a root-cause analysis (summary + citations) from cluster
    tool outputs + web results.
-5. Persists the RCA to the **`cha_investigations` Qdrant collection** for
+5. Persists the RCA to the **`srenix_investigations` Qdrant collection** for
    cross-cycle retrieval.
 6. Forwards the RCA into every downstream AI tier via a `<root_cause>`
    prompt block: T0 enricher, T1 proposer, T2 planner, and T3 runbook
@@ -167,7 +167,7 @@ investigator when the AI tier is enabled. It:
    prior-cycle RCAs for the same finding class (via a
    `<prior_investigation>` block) and the T0 enrichment.
 
-**Flags** (CHA-com binary):
+**Flags** (Srenix Enterprise binary):
 
 | Flag | Default | Notes |
 |---|---|---|
@@ -178,10 +178,10 @@ investigator when the AI tier is enabled. It:
 
 **ESO setup** (Firecrawl key):
 ```yaml
-# ExternalSecret cha-firecrawl-key
+# ExternalSecret srenix-firecrawl-key
 # ClusterSecretStore: vault-backend
 # Vault path: secret/data/shared/api-keys  key: firecrawl_api_key
-# Produces:  K8s Secret cha-firecrawl-key  key: FIRECRAWL_API_KEY
+# Produces:  K8s Secret srenix-firecrawl-key  key: FIRECRAWL_API_KEY
 ```
 See [AI_OPERATOR_RUNBOOK.md](AI_OPERATOR_RUNBOOK.md) for the full
 deployment procedure.
@@ -265,7 +265,7 @@ existing read access.
 **Operator decision**: Layer-2 (rule-based) is on by default in OSS
 and is safe in every environment — there is no new RBAC, no network
 egress beyond the existing probes, and no token cost. Disable with
-`CHA_INVESTIGATOR=off` only if you want bit-identical output to the
+`SRENIX_INVESTIGATOR=off` only if you want bit-identical output to the
 pre-v1.5 binary. The paid LLM-backed deep-RCA investigator is opt-in
 and lands on the same DriftReport field, the same Slack block, and the
 same audit-event taxonomy as the rule-based version — so swapping is a
@@ -279,7 +279,7 @@ evidence.
 **Capability**: When a diagnostic matches an existing OSS whitelisted
 fixer, surface an `Apply Fix` button next to the diagnostic. Clicking
 verifies the signature, re-validates admission, applies the mutation
-via the same code path as today's `cha remediate --live`, runs a 60s
+via the same code path as today's `srenix remediate --live`, runs a 60s
 post-apply verification, and posts the outcome.
 
 **LLM JSON schema** (`pkg/ai.AIProposedAction`):
@@ -309,7 +309,7 @@ additional annotations — returns `ErrPatchForbidden` at admission.
 Payload size capped at 64 KiB; the restart-annotation value capped
 at 256 characters. Closes the StatefulSet-replicas-zero data-loss
 vector from the 2026-05-22 threat model. Source:
-[`CHA-com/ai/approval/patch_validator.go`](../../CHA-com/ai/approval/patch_validator.go).
+[`Srenix Enterprise/ai/approval/patch_validator.go`](../../Srenix Enterprise/ai/approval/patch_validator.go).
 
 **Click flow** (with audit checkpoints):
 ```
@@ -338,7 +338,7 @@ investigation calls have an independent budget
 diagnostic class. Without this, a flapping workload could uncapped-
 burn investigations at ~144/day per resource. Per-class overrides
 via `ai.rateLimit.perInvestigationClass`. Source:
-[`CHA-com/ai/rate_limit.go`](../../CHA-com/ai/rate_limit.go).
+[`Srenix Enterprise/ai/rate_limit.go`](../../Srenix Enterprise/ai/rate_limit.go).
 
 **Cold-start mitigation (Sprint 3.3).** New rate-limit buckets
 initialize at 0 tokens by default rather than full capacity.
@@ -359,7 +359,7 @@ deployments without a memory store are unaffected; deployments with
 accumulate.
 
 **Tamper-evident audit (Sprint 3.6).** Wrapping any `AuditSink` in
-`ChainedSink` (from `CHA-com/ai/audit/`) appends `prev_hash` and
+`ChainedSink` (from `Srenix Enterprise/ai/audit/`) appends `prev_hash` and
 `entry_hash` fields to each event's Details. `VerifyChain([]Event)`
 walks the chain and returns the first broken-link index — detecting
 content mutation, reordering, and insertion/deletion. Layer over an
@@ -397,7 +397,7 @@ post-apply verification passes.
 **Constraints enforced**:
 - `MaxPlanSteps = 5` (hard cap; planner truncates or rejects)
 - Each step independently validates as a T1 action
-- `prerequisite_step` chains plan ordering; CHA fills `PrerequisiteActionID`
+- `prerequisite_step` chains plan ordering; Srenix fills `PrerequisiteActionID`
 - Plans cannot self-modify (LLM has no `Plan` action_kind)
 - Plans with circular dependencies are rejected at construction
 
@@ -426,7 +426,7 @@ post. The runbook specifies:
 - A `vault kv patch` command template with `${VALUE_NAME}` placeholders
 - Pre/post manual steps (rotate upstream key, verify, etc.)
 
-**CHA-com NEVER executes Vault writes in T3.** The runbook is for
+**Srenix Enterprise NEVER executes Vault writes in T3.** The runbook is for
 human execution by two distinct SREs.
 
 **Dual-approval flow**:
@@ -441,7 +441,7 @@ SRE B (≠ A) clicks → state.second set → audit: ai.runbook.approval_recorde
                                          (slot=2, complete=true)
 SRE A + B together run `vault kv patch` from THEIR shell using values
 they control.
-SRE clicks "Mark Resolved" → CHA-com re-runs VaultPathMissing analyzer
+SRE clicks "Mark Resolved" → Srenix Enterprise re-runs VaultPathMissing analyzer
                               → if cleared, diagnostic resolves
 ```
 
@@ -466,9 +466,9 @@ recovery action.
 
 ## G7 — Confidence-gated auto-apply (`--autonomy`)
 
-This is the **only** path by which CHA-com mutates cluster state without a
+This is the **only** path by which Srenix Enterprise mutates cluster state without a
 human click, and it is **OFF by default**. It is enabled with the
-`cha-com watch --autonomy` flag, which additionally requires
+`srenix-enterprise watch --autonomy` flag, which additionally requires
 `--memory-store-url` to supply the confidence signal. With `--autonomy`
 unset, nothing ever auto-applies and the cardinal rule holds unchanged.
 
@@ -505,7 +505,7 @@ must also carry a rollback (reversible) or it is refused.
 
 **Audit / observability**: auto-applies are recorded with
 `Delivery="autonomy"` and surface in the per-cycle
-`outcomes: … applied=N …` log line and the `cha_autonomy_total{result=…}`
+`outcomes: … applied=N …` log line and the `srenix_autonomy_total{result=…}`
 metric.
 
 **Recommended posture**: keep `--autonomy` disabled until you have a track
@@ -521,7 +521,7 @@ enable it scoped to that class via `--autonomy-allow`.
 | `ai.enabled` | true | n/a (separate switch) | true | true | true | true |
 | `ai.tier` | t0 | n/a | t0+ | t1 | t2 | t3 |
 | `ai.endpoint` | required | n/a | required | required | required | required |
-| `CHA_INVESTIGATOR` env | unchanged | (default on) | overridden by paid binary | unchanged | unchanged | unchanged |
+| `SRENIX_INVESTIGATOR` env | unchanged | (default on) | overridden by paid binary | unchanged | unchanged | unchanged |
 | `approval.enabled` | false (n/a) | false (n/a) | false (n/a) | true | true | true |
 | `approval.ingress.enabled` | false | false | false | true | true | true |
 | `approval.ingress.host` | — | — | — | required | required | required |
@@ -543,7 +543,7 @@ watcher itself.
 
 To temporarily downshift (e.g., during a model rollout):
 ```sh
-helm upgrade cha cha/cluster-health-autopilot --reuse-values --set ai.tier=t0
+helm upgrade srenix srenix/agentic-sre --reuse-values --set ai.tier=t0
 ```
 The watcher reads the value each cycle; downshift takes effect within
 one watcher resync (default 10 min). In-flight plans (T2) and runbooks
@@ -556,5 +556,5 @@ investigator keeps running — its output is part of OSS behavior, not
 the paid AI surface.
 
 To return the cluster to bit-identical pre-v1.5 OSS behavior (no
-investigator at all), additionally set `CHA_INVESTIGATOR=off` on the
+investigator at all), additionally set `SRENIX_INVESTIGATOR=off` on the
 watcher Deployment.

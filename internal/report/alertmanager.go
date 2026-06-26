@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
 )
 
 // AMAlert is one alert in the Alertmanager v2 API format.
@@ -64,12 +64,12 @@ func PostAlertmanager(client *http.Client, url string, alerts []AMAlert) error {
 
 // BuildActiveAlerts converts the current set of active issues (postFix state)
 // into Alertmanager alerts. Every call refreshes the TTL so Alertmanager keeps
-// alerts firing as long as CHA keeps posting them. If an issue disappears
+// alerts firing as long as Srenix keeps posting them. If an issue disappears
 // (watcher stops posting it), Alertmanager auto-resolves after ttl expires.
 //
 // Label scheme:
 //
-//	alertname  = "cha_issue"
+//	alertname  = "srenix_issue"
 //	severity   = critical | warning | info
 //	subject    = the stable issue subject key
 //	source     = probe/analyzer name
@@ -84,8 +84,8 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 			continue // don't fire info-level issues
 		}
 		// Only critical + actionable findings page via Alertmanager. Purely
-		// advisory warnings (no approve/deny action) stay on CHA's native Slack
-		// with the honest "CHA Advisory" title and are not duplicated here.
+		// advisory warnings (no approve/deny action) stay on Srenix's native Slack
+		// with the honest "Srenix Advisory" title and are not duplicated here.
 		if d.Severity != "critical" && d.ApprovalURL == "" {
 			continue
 		}
@@ -108,11 +108,11 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 		}
 		// Dedicated annotation so templates can render the root cause in its
 		// own block (e.g. {{ .Annotations.investigation }}). Populated by the
-		// Layer-2 investigator (rule-based in OSS, LLM in CHA-com).
+		// Layer-2 investigator (rule-based in OSS, LLM in Srenix Enterprise).
 		if d.Investigation != "" {
 			annotations["investigation"] = d.Investigation
 		}
-		// AI tier annotations — populated only when CHA-com active.
+		// AI tier annotations — populated only when Srenix Enterprise active.
 		// Alertmanager templates can reference {{ .Annotations.ai_enrichment }}
 		// to render the narrative in receiver-specific formatting.
 		if d.Enrichment != "" {
@@ -120,7 +120,7 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 		}
 		if d.ApprovalURL != "" {
 			annotations["proposed_fix_url"] = d.ApprovalURL
-			// Symmetric deny URL (cha-com #17 symmetric one-shot
+			// Symmetric deny URL (srenix-enterprise #17 symmetric one-shot
 			// tokens). The Slack/email template renders both buttons
 			// so the SRE has a one-click Deny alongside Approve.
 			// Whichever endpoint the JTI lands at first wins; the
@@ -133,7 +133,7 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 		}
 		out = append(out, AMAlert{
 			Labels: map[string]string{
-				"alertname": "cha_issue",
+				"alertname": "srenix_issue",
 				"severity":  d.Severity,
 				"subject":   truncateLabel(d.Subject),
 				"source":    truncateLabel(d.Severity), // overridden below if Source available
@@ -151,7 +151,7 @@ func BuildActiveAlerts(active []DeltaDiag, clusterName string, ttl time.Duration
 	return out
 }
 
-// BuildFixerAlerts fires one `cha_fixer_acted` alert per fixer that took
+// BuildFixerAlerts fires one `srenix_fixer_acted` alert per fixer that took
 // action this cycle. Short TTL — these are informational and auto-resolve
 // quickly. Alertmanager routes them to #ceph-alerts.
 func BuildFixerAlerts(fixResults []fix.Result, clusterName string) []AMAlert {
@@ -171,13 +171,13 @@ func BuildFixerAlerts(fixResults []fix.Result, clusterName string) []AMAlert {
 		}
 		out = append(out, AMAlert{
 			Labels: map[string]string{
-				"alertname": "cha_fixer_acted",
+				"alertname": "srenix_fixer_acted",
 				"severity":  "info",
 				"fixer":     truncateLabel(fr.Fixer),
 				"cluster":   clusterName,
 			},
 			Annotations: map[string]string{
-				"summary": fmt.Sprintf("CHA %s applied %d action(s): %s", fr.Fixer, len(fr.Actions), desc),
+				"summary": fmt.Sprintf("Srenix %s applied %d action(s): %s", fr.Fixer, len(fr.Actions), desc),
 			},
 			StartsAt: now,
 			EndsAt:   endsAt,
@@ -278,11 +278,11 @@ func buildSilenceSnippet(d DeltaDiag, ttl time.Duration) string {
 	// accepts {source, subject, severity}. Subject is the most
 	// specific selector — exact match only.
 	return fmt.Sprintf(`kubectl apply -f - <<EOF
-apiVersion: cha.bionicaisolutions.com/v1alpha1
+apiVersion: srenix.ai/v1alpha1
 kind: Silence
 metadata:
   name: %s
-  namespace: cluster-health-autopilot
+  namespace: agentic-sre
 spec:
   matcher:
     subject: %q

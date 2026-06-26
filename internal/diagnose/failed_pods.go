@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -30,7 +30,7 @@ import (
 //
 // Severity is Critical: a Failed pod is a workload replica that is permanently
 // down until something deletes and reschedules it. Opts out via
-// CHA_ANALYZER_FAILED_PODS=off (handled at catalog registration).
+// SRENIX_ANALYZER_FAILED_PODS=off (handled at catalog registration).
 type FailedPods struct{}
 
 // Name satisfies the Analyzer contract.

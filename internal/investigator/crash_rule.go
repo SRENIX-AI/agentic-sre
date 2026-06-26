@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package investigator
@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 )
 
 // podRef pulls the first "namespace/pod" token out of a finding/diagnostic
@@ -68,7 +68,7 @@ func isCrashClass(low string) bool {
 // investigateCrash fetches the failed container's logs (previous instance
 // first, since a CrashLooping pod's current attempt may not have logged yet)
 // and classifies the crash cause from the log tail. This is the capability
-// that lets CHA answer "WHY did it crash" in the alert instead of telling the
+// that lets Srenix answer "WHY did it crash" in the alert instead of telling the
 // operator to run kubectl logs --previous themselves.
 func investigateCrash(ctx context.Context, ns, pod, originalMsg string, env ai.Environment) (ai.InvestigationResult, error) {
 	res := ai.InvestigationResult{}
@@ -143,7 +143,7 @@ func investigateCrash(ctx context.Context, ns, pod, originalMsg string, env ai.E
 
 		// 3) Nothing concrete beyond the finding message — stay SILENT. Emitting
 		//    "could not determine" contradicts a self-explanatory message and
-		//    makes CHA look like it failed to investigate.
+		//    makes Srenix look like it failed to investigate.
 		res.Conclusion = ai.ConclusionInsufficientData
 		return res, nil
 	}
@@ -367,7 +367,7 @@ func classifyCrashLogs(lines []string) string {
 
 	switch {
 	// CLI binary invoked with no/!valid subcommand — prints usage and exits 0.
-	// This is the exact shape of CHA's own mis-deployed runner.
+	// This is the exact shape of Srenix's own mis-deployed runner.
 	case containsAll(joinedLow, "usage:", "available commands:"),
 		strings.Contains(joinedLow, "use \"") && strings.Contains(joinedLow, "[command]"):
 		return "container printed CLI usage/help and exited — its Deployment specifies no (or an invalid) command/args, so the binary has no subcommand to run. Fix the workload's command/args (or run it as a Job, not a Deployment)."

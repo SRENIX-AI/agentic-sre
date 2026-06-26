@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package azure
@@ -26,7 +26,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 
-	pkgazure "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/azure"
+	pkgazure "github.com/srenix-ai/agentic-sre/pkg/cloud/azure"
 )
 
 // LiveClient implements pkgazure.Client against azure-sdk-for-go.
@@ -524,7 +524,7 @@ func (l *LiveClient) ListAppGatewayBackends(ctx context.Context) ([]pkgazure.App
 			}
 			// The gateway's public hostname (from the already-fetched
 			// listener config — no extra API call) feeds
-			// FrontendHostname, the CHA-com "(lb: ...)" RCA join key;
+			// FrontendHostname, the Srenix Enterprise "(lb: ...)" RCA join key;
 			// the probe falls back to the gateway name when empty.
 			frontendHostname := appGatewayFrontendHostname(gw)
 			for _, pool := range gw.Properties.BackendAddressPools {
@@ -578,7 +578,7 @@ func (l *LiveClient) ListAppServiceCertificates(ctx context.Context) ([]pkgazure
 				}
 				// A populated thumbprint means the cert is issued.
 				rec.Issued = c.Properties.Thumbprint != nil && *c.Properties.Thumbprint != ""
-				// SANs/CN the certificate covers — feeds the CHA-com
+				// SANs/CN the certificate covers — feeds the Srenix Enterprise
 				// "(domains: ...)" RCA join key (omitted when empty).
 				rec.Domains = derefNonEmpty(c.Properties.HostNames)
 			}

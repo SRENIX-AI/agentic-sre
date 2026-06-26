@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -10,7 +10,7 @@ import (
 	iam "google.golang.org/api/iam/v1"
 )
 
-// forwardingRuleIndex feeds the CHA-com "(lb: ...)" join key — backend
+// forwardingRuleIndex feeds the Srenix Enterprise "(lb: ...)" join key — backend
 // service name → forwarding-rule IP (preferred) or name.
 //
 // Error-injection: when ForwardingRules.AggregatedList errors,

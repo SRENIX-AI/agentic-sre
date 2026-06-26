@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package investigator
@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // fakeEnv implements ai.Environment with hard-coded responses for each tool.
@@ -238,14 +238,14 @@ func TestRuleBased_UnmatchedFindingReturnsEmpty(t *testing.T) {
 }
 
 func TestRuleBased_CrashLoop_NoSubcommand(t *testing.T) {
-	// The exact shape of CHA's own mis-deployed runner: prints CLI usage and
+	// The exact shape of Srenix's own mis-deployed runner: prints CLI usage and
 	// exits. The investigator must identify the missing-subcommand cause.
 	env := &fakeEnv{logsPrev: ai.LogsResult{
 		Previous: true,
 		Lines: []string{
-			"Cluster Health Autopilot",
+			"Agentic SRE",
 			"Usage:",
-			"  cha [command]",
+			"  srenix [command]",
 			"Available Commands:",
 			"  diagnose    Run probes + analyzers",
 			"  watch       Event-driven cluster health watcher",
@@ -254,7 +254,7 @@ func TestRuleBased_CrashLoop_NoSubcommand(t *testing.T) {
 	f := probe.Finding{
 		Component: "CrashLoopBackOff",
 		Severity:  probe.SeverityCritical,
-		Message:   "Pod cluster-health-autopilot/cha-runner-xyz in CrashLoopBackOff (64 restarts)",
+		Message:   "Pod agentic-sre/srenix-runner-xyz in CrashLoopBackOff (64 restarts)",
 	}
 	res, err := RuleBased{}.InvestigateFinding(context.Background(), f, env)
 	if err != nil {

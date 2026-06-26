@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/netpol"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/netpol"
 )
 
 // DefaultNetpolMaxPerCycle is the default cap on the number of
@@ -33,7 +33,7 @@ const DefaultNetpolMaxPerCycle = 5
 // noise where applies would be decorative-only.
 //
 // The proposer NEVER applies the policy itself. It emits the YAML in
-// ProposedPolicyYAML; cha-com aiwatch wraps that into an
+// ProposedPolicyYAML; srenix-enterprise aiwatch wraps that into an
 // ApprovalProposal CR and renders Approve/Deny in Slack (v1.10.4
 // pattern). The approval-server's /approve endpoint reads the YAML
 // off the CR and applies it. The OSS install never sees Approve/Deny

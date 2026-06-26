@@ -1,13 +1,13 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package investigator implements the read-only investigator tier (Layer 2)
-// of the CHA pipeline. It exposes a concrete Environment backed by net/http,
+// of the Srenix pipeline. It exposes a concrete Environment backed by net/http,
 // net.Resolver, crypto/tls, and the watcher's snapshot.Source, plus a
 // deterministic rule-based Investigator that pattern-matches the failure
 // mode and runs the appropriate tools.
 //
-// The LLM-backed Investigator implementation lives in the paid CHA-com
+// The LLM-backed Investigator implementation lives in the paid Srenix Enterprise
 // binary; both implementations share the same pkg/ai.Investigator interface
 // and Environment surface.
 package investigator
@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
@@ -128,7 +128,7 @@ func (e *LiveEnvironment) HTTPProbe(ctx context.Context, target string, opts ai.
 		r.Error = "request build: " + err.Error()
 		return r, nil
 	}
-	req.Header.Set("User-Agent", "cha-investigator/1.0")
+	req.Header.Set("User-Agent", "srenix-investigator/1.0")
 
 	client := &http.Client{
 		Timeout: timeout,

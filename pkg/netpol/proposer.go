@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package netpol
@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	pkgai "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	pkgai "github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -23,7 +23,7 @@ var gvrNetworkPolicy = snapshot.GVRNetworkPolicy
 //
 // The OSS proposer never APPLIES the proposal. The paid AI tier wraps
 // it as an ApprovalProposal CR and renders Approve/Deny in Slack
-// (v1.10.4 pattern). On Approve click, cha-com's approval-server reads
+// (v1.10.4 pattern). On Approve click, srenix-enterprise's approval-server reads
 // the CR's PolicyYAML and applies it.
 type Proposal struct {
 	// Namespace this proposal targets.
@@ -52,7 +52,7 @@ type Proposal struct {
 }
 
 // AllowRule is one structured allow entry inside the proposal — useful
-// for testing and for the cha-com judge layer that verifies proposals
+// for testing and for the srenix-enterprise judge layer that verifies proposals
 // before surfacing them.
 type AllowRule struct {
 	// Kind ∈ {"same-namespace", "controller-namespace", "labeled-pod"}.
@@ -140,7 +140,7 @@ type SnapshotProposer struct {
 // isProtectedNS delegates to the canonical ai.IsProtectedNamespace guard,
 // which covers kube-system/public/node-lease + rook-ceph + vault +
 // external-secrets + cnpg-system + calico-system + tigera-operator
-// and any operator-appended extras (CHA_PROTECTED_NAMESPACES_EXTRA).
+// and any operator-appended extras (SRENIX_PROTECTED_NAMESPACES_EXTRA).
 // This replaces the old local 3-entry map that diverged from the floor.
 func isProtectedNS(ns string) bool { return pkgai.IsProtectedNamespace(ns) }
 
@@ -178,7 +178,7 @@ func (p SnapshotProposer) ProposeForNamespace(ctx context.Context, src snapshot.
 		controllerNS = nil
 	}
 
-	policyName := "cha-proposed-allow-intracluster"
+	policyName := "srenix-proposed-allow-intracluster"
 	allows := []AllowRule{
 		{Kind: "same-namespace", Namespace: "*", Why: "intra-namespace pod-to-pod"},
 	}
@@ -251,8 +251,8 @@ metadata:
   name: %s
   namespace: %s
   annotations:
-    cha.bionicaisolutions.com/proposer: snapshot-proposer
-    cha.bionicaisolutions.com/policy-tier: default-deny-plus-observed-allows
+    srenix.ai/proposer: snapshot-proposer
+    srenix.ai/policy-tier: default-deny-plus-observed-allows
 spec:
   podSelector: {}
   policyTypes:
