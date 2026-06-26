@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package aws contains the AWS implementation of the cloud probe
@@ -11,9 +11,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // RDS reports drift on AWS RDS DBInstances:

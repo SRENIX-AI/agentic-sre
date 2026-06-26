@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package azure
@@ -109,7 +109,7 @@ type AppGatewayBackend struct {
 	// Optional: empty when no listener declares a hostname (including
 	// snapshot files captured before this field existed) — the probe
 	// then falls back to the gateway name for the "(lb: ...)" message
-	// join key CHA-com's RCA matchers parse.
+	// join key Srenix Enterprise's RCA matchers parse.
 	FrontendHostname string `json:"frontendHostname,omitempty"`
 }
 
@@ -124,7 +124,7 @@ type Certificate struct {
 	// the certificate resource's HostNames). Optional: empty when not
 	// surfaced (including snapshot files captured before this field
 	// existed) — the probe then omits the "(domains: ...)" message
-	// join key CHA-com's RCA matchers parse.
+	// join key Srenix Enterprise's RCA matchers parse.
 	Domains []string `json:"domains,omitempty"`
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
 )
 
 // ManifestBridge turns Diagnostic.ProposedPolicyYAML into a signable
@@ -56,7 +56,7 @@ func (ManifestBridge) Propose(_ context.Context, d diagnose.Diagnostic) (*AIProp
 
 // BuildApplyManifestProposal is the underlying builder. Exposed for
 // callers that want the bridge logic without going through the
-// FixProposer interface (e.g. cha-com's diagnose subcommand renders
+// FixProposer interface (e.g. srenix-enterprise's diagnose subcommand renders
 // proposals inline). Returns nil when validation refuses the YAML.
 func BuildApplyManifestProposal(d diagnose.Diagnostic) *AIProposedAction {
 	yamlBytes := []byte(d.ProposedPolicyYAML)

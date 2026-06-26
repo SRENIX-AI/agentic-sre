@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package diagnose
@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -31,7 +31,7 @@ import (
 // Each match produces one diagnostic per (involved-object, pattern)
 // pair, with the matching event message included verbatim so the
 // operator can search for the root cause directly. Opts out via
-// CHA_ANALYZER_LOG_PATTERN_MATCHER=off.
+// SRENIX_ANALYZER_LOG_PATTERN_MATCHER=off.
 type LogPatternMatcher struct{}
 
 // Name satisfies the Analyzer contract.

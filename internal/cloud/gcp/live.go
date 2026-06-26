@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package gcp
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	pkggcp "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/gcp"
+	pkggcp "github.com/srenix-ai/agentic-sre/pkg/cloud/gcp"
 	kms "google.golang.org/api/cloudkms/v1"
 	compute "google.golang.org/api/compute/v1"
 	container "google.golang.org/api/container/v1"
@@ -21,7 +21,7 @@ import (
 
 // LiveClient implements pkggcp.Client against the google.golang.org/api
 // generated clients. Auth flows through Application Default
-// Credentials (ADC): for the in-cluster CHA Deployment that's GKE
+// Credentials (ADC): for the in-cluster Srenix Deployment that's GKE
 // Workload Identity (the Helm chart annotates the KSA with the GSA);
 // locally it's `gcloud auth application-default login` or
 // GOOGLE_APPLICATION_CREDENTIALS.
@@ -340,7 +340,7 @@ func (l *LiveClient) ListSubnets(ctx context.Context) ([]pkggcp.Subnet, error) {
 func (l *LiveClient) ListBackendServices(ctx context.Context) ([]pkggcp.BackendService, error) {
 	// One ForwardingRules aggregated list per probe cycle builds the
 	// backend-service → forwarding-rule (IP or name) map that feeds
-	// ForwardingRule — the CHA-com "(lb: ...)" RCA join key.
+	// ForwardingRule — the Srenix Enterprise "(lb: ...)" RCA join key.
 	// Best-effort: a failure leaves the map empty (message enrichment
 	// is never worth failing the probe over) and the probe falls back
 	// to the backend-service name.

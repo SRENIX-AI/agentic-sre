@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/fix"
+	"github.com/srenix-ai/agentic-sre/pkg/fix"
 )
 
 // TestDeltaSilence_ClickLinks_WhenMinted asserts that the LIVE critical

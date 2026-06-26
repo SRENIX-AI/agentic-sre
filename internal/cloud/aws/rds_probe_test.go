@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // (fakeAWS / fakeSource live in fake_test.go — shared across all probe tests.)

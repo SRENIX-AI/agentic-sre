@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -16,10 +16,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
 )
 
 // DriftReportEntry is the abstract input the writer consumes — assembled
@@ -135,7 +135,7 @@ func NormalizeSeverity(severity, source string) string {
 // Reconcile upserts one CR per entry and deletes CRs whose subject is not
 // in the current entry set.
 //
-// runID identifies this cha invocation; it gets stamped into status.runID
+// runID identifies this srenix invocation; it gets stamped into status.runID
 // so an operator can tell which cron tick last observed each report.
 //
 // keep: returns ALL existing CRs in the cluster. Any CR whose subject is
@@ -240,14 +240,14 @@ func Reconcile(
 		// Create.
 		cr := unstructured.Unstructured{
 			Object: map[string]any{
-				"apiVersion": "cha.bionicaisolutions.com/v1alpha1",
+				"apiVersion": "srenix.ai/v1alpha1",
 				"kind":       "DriftReport",
 				"metadata": map[string]any{
 					"name": crName,
 					"labels": map[string]any{
-						"cha.bionicaisolutions.com/category": entry.Category,
-						"cha.bionicaisolutions.com/severity": entry.Severity,
-						"cha.bionicaisolutions.com/source":   sanitizeLabel(entry.Source),
+						"srenix.ai/category": entry.Category,
+						"srenix.ai/severity": entry.Severity,
+						"srenix.ai/source":   sanitizeLabel(entry.Source),
 					},
 				},
 				"spec": map[string]any{

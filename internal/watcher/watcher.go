@@ -1,13 +1,13 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package watcher implements cha watch --live: a long-running event-driven
+// Package watcher implements srenix watch --live: a long-running event-driven
 // diagnose loop.
 //
 // Kubernetes watches fire for every relevant resource type (pods, events,
 // secrets, externalsecrets, certificates, deployments, replicasets, jobs,
 // cronjobs, …). A short debounce window collapses burst events before
-// re-running the full probe+analyzer stack — identical to cha diagnose --live.
+// re-running the full probe+analyzer stack — identical to srenix diagnose --live.
 //
 // Slack and DriftReport outputs are fingerprint-deduplicated:
 //   - A post fires only when a diagnostic is new, its severity/message changed,
@@ -34,17 +34,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kwwatch "k8s.io/apimachinery/pkg/watch"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/fix"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/probe"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/report"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/server/webhook"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/trigger/prom"
-	pkgai "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/registry"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/silence"
+	"github.com/srenix-ai/agentic-sre/internal/diagnose"
+	"github.com/srenix-ai/agentic-sre/internal/fix"
+	"github.com/srenix-ai/agentic-sre/internal/probe"
+	"github.com/srenix-ai/agentic-sre/internal/report"
+	"github.com/srenix-ai/agentic-sre/internal/server/webhook"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/internal/trigger/prom"
+	pkgai "github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/cloud"
+	"github.com/srenix-ai/agentic-sre/pkg/registry"
+	"github.com/srenix-ai/agentic-sre/pkg/silence"
 )
 
 // Config controls all tunable watcher behaviours.
@@ -58,7 +58,7 @@ type Config struct {
 	ResyncPeriod time.Duration
 
 	// SlackChannels holds the two event-driven webhook URLs.
-	//   Alerts   → #ceph-alerts:   CHA acted (fixers ran and resolved issues)
+	//   Alerts   → #ceph-alerts:   Srenix acted (fixers ran and resolved issues)
 	//   Critical → #ceph-critical: human action required (unfixable / still active)
 	// Either may be empty — posts are silently skipped for empty strings.
 	// When AlertmanagerURL is set, Alertmanager handles routing and these are
@@ -79,18 +79,18 @@ type Config struct {
 
 	// AlertmanagerURL is the base URL of the Alertmanager API
 	// (e.g. "http://alertmanager.pg.svc.cluster.local:9093").
-	// When set, CHA posts the full active-issue state each cycle as Prometheus
+	// When set, Srenix posts the full active-issue state each cycle as Prometheus
 	// alerts. Alertmanager handles dedup, grouping, silencing, and routing to
 	// all configured receivers (Slack, PagerDuty, Teams, email, …).
 	// The TTL for each posted alert is set to 2× ResyncPeriod + 1 minute buffer
-	// so alerts auto-resolve if CHA stops refreshing them.
+	// so alerts auto-resolve if Srenix stops refreshing them.
 	AlertmanagerURL string
 	// ClusterName is stamped as the `cluster` label on every Alertmanager alert.
 	// Defaults to "cluster" when empty.
 	ClusterName string
 
 	// ApprovalBaseURL is the external base URL of the approval-server
-	// (e.g. https://cha-approve.example.com). When set together with a
+	// (e.g. https://srenix-approve.example.com). When set together with a
 	// registered FixProposer and Signer, the watcher emits Apply Fix
 	// links pointing at <base>/approve?token=<JWT>. When empty, no
 	// approval URLs are emitted regardless of registered AI components.
@@ -108,7 +108,7 @@ type Config struct {
 	WriteDriftReports bool
 
 	// Ticketing wires an optional issue-tracker sink (OpenProject via MCP
-	// in OSS; Jira / ServiceNow in CHA-com). When Sink is nil the
+	// in OSS; Jira / ServiceNow in Srenix Enterprise). When Sink is nil the
 	// ticketing path is a no-op and the watcher behaves exactly as
 	// before. Ticketing runs after DriftReport reconcile so the resulting
 	// TicketRef can be persisted onto status.ticket.
@@ -117,7 +117,7 @@ type Config struct {
 	// CloudSource is the optional multi-provider cloud-API source
 	// (AWS / GCP / Azure). When nil the cloud-probe path is a complete
 	// no-op and the watcher behaves exactly as before. Set via
-	// `--ticketing-provider` style CLI factory in cmd/cha (look for
+	// `--ticketing-provider` style CLI factory in cmd/srenix (look for
 	// buildCloudSource).
 	CloudSource cloud.Source
 
@@ -157,7 +157,7 @@ type Config struct {
 	// PromTriggerAlertFilter, when non-empty, limits which alerts fire
 	// the trigger (case-insensitive alertname match). Empty = ANY firing
 	// alert triggers. Useful when the cluster has high-volume alerts
-	// (e.g. node_exporter scraping issues) that shouldn't churn CHA.
+	// (e.g. node_exporter scraping issues) that shouldn't churn Srenix.
 	PromTriggerAlertFilter []string
 
 	// WebhookListen is the listen address for the M6 class-E trigger
@@ -190,7 +190,7 @@ type Config struct {
 const defaultHealthListen = ":8081"
 
 // watchedGVRs is the set of resource types that trigger a diagnose cycle on change.
-// This mirrors the CaptureGVRs set used by `cha snapshot capture` plus Secrets.
+// This mirrors the CaptureGVRs set used by `srenix snapshot capture` plus Secrets.
 var watchedGVRs = []schema.GroupVersionResource{
 	snapshot.GVRPod,
 	snapshot.GVRNode,
@@ -304,7 +304,7 @@ type Watcher struct {
 
 	// healthOnce + healthLn back the always-on health server. The
 	// server is started at most once per Watcher (StartHealthServer is
-	// idempotent: cmd/cha starts it BEFORE leader election so standby
+	// idempotent: cmd/srenix starts it BEFORE leader election so standby
 	// pods serve /healthz, and Run calls it again defensively for
 	// direct callers). healthLn holds the bound listener so tests can
 	// discover the ephemeral port. Guarded by healthMu.
@@ -372,7 +372,7 @@ func (w *Watcher) healthHandler() http.Handler {
 // probe target exists the moment this returns. It is idempotent;
 // only the first call binds. The server shuts down when ctx ends.
 //
-// REGRESSION GUARD (O11, production 1.26.0 upgrade incident): cmd/cha
+// REGRESSION GUARD (O11, production 1.26.0 upgrade incident): cmd/srenix
 // MUST call this BEFORE RunWithLeader. PR #186 originally started this
 // server inside Run — which only executes after the leader lease is
 // acquired — so standby pods served nothing, the liveness probe got
@@ -515,7 +515,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 		}()
 	}
 
-	// Always-on health server. cmd/cha starts it BEFORE leader election
+	// Always-on health server. cmd/srenix starts it BEFORE leader election
 	// (so standby pods serve /healthz — see StartHealthServer's O11
 	// regression note); this call is an idempotent no-op there, and the
 	// real start for direct Run callers (leader election disabled).

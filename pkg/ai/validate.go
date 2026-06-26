@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package ai
@@ -15,7 +15,7 @@ import (
 // without importing the internal package.
 //
 // This map is the COMPILED-IN FLOOR, not the complete protected set:
-// operators may APPEND namespaces via CHA_PROTECTED_NAMESPACES_EXTRA
+// operators may APPEND namespaces via SRENIX_PROTECTED_NAMESPACES_EXTRA
 // (or SetExtraProtectedNamespaces) — see protected.go. Nothing can
 // remove an entry from this floor at runtime.
 var ProtectedNamespaces = map[string]struct{}{
@@ -30,7 +30,7 @@ var ProtectedNamespaces = map[string]struct{}{
 
 // IsProtectedNamespace reports whether ns is on the no-touch list —
 // the compiled-in floor PLUS any operator-appended extras
-// (CHA_PROTECTED_NAMESPACES_EXTRA / SetExtraProtectedNamespaces).
+// (SRENIX_PROTECTED_NAMESPACES_EXTRA / SetExtraProtectedNamespaces).
 // Mirrors fix.IsProtectedNamespace; the floor is duplicated to avoid a
 // cross-package dependency from the public ai package into
 // internal/fix, while the extras are shared (internal/fix consults
@@ -95,7 +95,7 @@ func (a *AIProposedAction) Validate() error {
 // ApplyManifest, pull-request URL shape for ProposePullRequest, the expiry
 // window, and the proposal-tier check.
 //
-// Intended caller: the CHA-com approval-server executor (ai/approval/executor.go
+// Intended caller: the Srenix Enterprise approval-server executor (ai/approval/executor.go
 // Execute), which validates the reconstructed proposal immediately before
 // applying the mutation.
 func (a *AIProposedAction) ValidateForExecution() error {
@@ -132,7 +132,7 @@ func (a *AIProposedAction) validateStructural() error {
 		}
 	}
 	// v1.17.0: ActionProposePullRequest carries a URL the
-	// approval-server links the SRE to. The URL is opaque from CHA's
+	// approval-server links the SRE to. The URL is opaque from Srenix's
 	// point of view (we don't fetch it), but we MUST insist it's a
 	// well-formed HTTPS URL — a malformed value would render as a
 	// broken / phishing-shaped link in Slack.

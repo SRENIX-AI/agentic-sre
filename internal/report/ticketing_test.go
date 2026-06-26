@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/ticketing"
 )
 
 // tixSource returns a fixed UnstructuredList for any List call. Other
@@ -98,7 +98,7 @@ func (r *recordingSink) Comment(_ context.Context, ref ticketing.TicketRef, body
 
 func makeDriftReport(subject, name string, ticket map[string]any) unstructured.Unstructured {
 	obj := map[string]any{
-		"apiVersion": "cha.bionicaisolutions.com/v1alpha1",
+		"apiVersion": "srenix.ai/v1alpha1",
 		"kind":       "DriftReport",
 		"metadata": map[string]any{
 			"name": name,
@@ -123,7 +123,7 @@ func TestTicketFromDeltaCarriesAllFields(t *testing.T) {
 	}
 	cfg := TicketingConfig{
 		Cluster: "gpu-cluster",
-		Labels:  []string{"cha", "auto-filed"},
+		Labels:  []string{"srenix", "auto-filed"},
 	}
 	tk := ticketFromDelta(delta, cfg, "run-42")
 
@@ -145,7 +145,7 @@ func TestTicketFromDeltaCarriesAllFields(t *testing.T) {
 	if !strings.Contains(tk.Body, "gpu-cluster") || !strings.Contains(tk.Body, "run-42") {
 		t.Errorf("body missing cluster/runID footer: %q", tk.Body)
 	}
-	if len(tk.Labels) != 2 || tk.Labels[0] != "cha" {
+	if len(tk.Labels) != 2 || tk.Labels[0] != "srenix" {
 		t.Errorf("labels=%v want config labels propagated", tk.Labels)
 	}
 }
@@ -181,7 +181,7 @@ func TestRouteTicketsUpsertsForUnfixableWithoutExistingRef(t *testing.T) {
 
 	RouteTickets(
 		context.Background(),
-		TicketingConfig{Sink: sink, Cluster: "gpu", Labels: []string{"cha"}},
+		TicketingConfig{Sink: sink, Cluster: "gpu", Labels: []string{"srenix"}},
 		src,
 		mut,
 		map[string]bool{"Pod/default/broken": true},

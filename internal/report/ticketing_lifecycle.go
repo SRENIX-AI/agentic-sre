@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package report
@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/internal/snapshot"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ticketing"
+	"github.com/srenix-ai/agentic-sre/internal/snapshot"
+	"github.com/srenix-ai/agentic-sre/pkg/ticketing"
 )
 
 // RouteResolves auto-closes tickets whose underlying finding has cleared
@@ -26,7 +26,7 @@ import (
 // For each cleared subject that has a status.ticket:
 //   - already-resolved (status.ticket.resolved == true) → no-op
 //     (idempotency: never re-resolve a ticket every cycle), and
-//   - otherwise → Sink.Resolve(ref, "CHA: condition cleared as of <ts>")
+//   - otherwise → Sink.Resolve(ref, "Srenix: condition cleared as of <ts>")
 //     then stamp status.ticket.resolved=true + resolvedAt so a second
 //     pass (e.g. a flapping subject re-clearing before the CR is gone)
 //     is a no-op.
@@ -52,7 +52,7 @@ func RouteResolves(
 		log.Printf("ticketing: resolve-on-clear list driftreports: %v", err)
 		return
 	}
-	reason := fmt.Sprintf("CHA: condition cleared as of %s", cycleTime.UTC().Format(time.RFC3339))
+	reason := fmt.Sprintf("Srenix: condition cleared as of %s", cycleTime.UTC().Format(time.RFC3339))
 	resolved := 0
 	for _, subj := range clearedSubjects {
 		cr, ok := bySubject[subj]
@@ -158,16 +158,16 @@ func buildRecurrenceComment(d DeltaDiag, cluster, runID string, wasResolved, sev
 	switch {
 	case wasResolved:
 		return fmt.Sprintf(
-			"**CHA: condition recurred.** This finding previously cleared and the ticket was resolved; it has reappeared and is active again.\n\n"+
+			"**Srenix: condition recurred.** This finding previously cleared and the ticket was resolved; it has reappeared and is active again.\n\n"+
 				"**Subject:** `%s`\n**Severity:** %s\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
 			d.Subject, d.Severity, d.Message, cluster, runID, now)
 	case sevChanged:
 		return fmt.Sprintf(
-			"**CHA: severity changed** %s → %s.\n\n**Subject:** `%s`\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
+			"**Srenix: severity changed** %s → %s.\n\n**Subject:** `%s`\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
 			prevSeverity, d.Severity, d.Subject, d.Message, cluster, runID, now)
 	default:
 		return fmt.Sprintf(
-			"**CHA: condition still active.**\n\n**Subject:** `%s`\n**Severity:** %s\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
+			"**Srenix: condition still active.**\n\n**Subject:** `%s`\n**Severity:** %s\n\n%s\n\n---\nCluster: `%s` · Run: `%s` · %s",
 			d.Subject, d.Severity, d.Message, cluster, runID, now)
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -10,11 +10,11 @@ import (
 	"os"
 	"path/filepath"
 
-	pkgaws "github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/cloud/aws"
+	pkgaws "github.com/srenix-ai/agentic-sre/pkg/cloud/aws"
 )
 
 // SnapshotClient replays cloud-resource state captured to disk by
-// `cha snapshot capture --include-cloud`. Read-only by construction
+// `srenix snapshot capture --include-cloud`. Read-only by construction
 // — there is no mutation API.
 //
 // Captured layout (one file per resource type):

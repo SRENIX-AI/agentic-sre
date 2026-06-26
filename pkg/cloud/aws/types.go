@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package aws
@@ -92,7 +92,7 @@ type ALBTargetGroup struct {
 	// resolved via elbv2.DescribeLoadBalancers). Optional: empty when
 	// the TG is unattached or the LB could not be resolved (including
 	// snapshot files captured before this field existed) — the probe
-	// then omits the "(lb: ...)" message join key CHA-com's RCA
+	// then omits the "(lb: ...)" message join key Srenix Enterprise's RCA
 	// matchers parse.
 	LoadBalancerDNS string `json:"loadBalancerDNS,omitempty"`
 }

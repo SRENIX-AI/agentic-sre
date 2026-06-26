@@ -1,4 +1,4 @@
-// Copyright 2026 Cluster Health Autopilot contributors
+// Copyright 2026 Agentic SRE contributors
 // SPDX-License-Identifier: Apache-2.0
 
 package investigator
@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/ai"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/diagnose"
-	"github.com/Bionic-AI-Solutions/cluster-health-autopilot/pkg/probe"
+	"github.com/srenix-ai/agentic-sre/pkg/ai"
+	"github.com/srenix-ai/agentic-sre/pkg/diagnose"
+	"github.com/srenix-ai/agentic-sre/pkg/probe"
 )
 
 // RuleBased is the deterministic Investigator implementation that ships in
@@ -23,7 +23,7 @@ import (
 //
 // Rules are intentionally narrow: each one targets one well-known failure
 // pattern. Unmatched failures return an empty result so the original alert
-// surfaces unchanged. The LLM-backed Investigator (paid CHA-com) handles
+// surfaces unchanged. The LLM-backed Investigator (paid Srenix Enterprise) handles
 // the long tail.
 type RuleBased struct{}
 
