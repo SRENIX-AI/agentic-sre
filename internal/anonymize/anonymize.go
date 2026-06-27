@@ -337,7 +337,7 @@ func anonSlashPath(s string) string {
 var wellKnownImages = []string{
 	"nginx", "redis", "postgres", "mysql", "mongo", "alpine", "ubuntu",
 	"debian", "busybox", "python", "node", "golang", "openjdk", "gcr.io/",
-	"registry.k8s.io/", "quay.io/", "ghcr.io/bionic-ai-solutions/",
+	"registry.k8s.io/", "quay.io/", "ghcr.io/srenix-ai/",
 }
 
 func isWellKnownImage(image string) bool {
