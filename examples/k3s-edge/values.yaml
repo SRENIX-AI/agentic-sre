@@ -10,7 +10,7 @@
 # single-server and small clusters produce.
 #
 # Apply on top of the chart defaults:
-#   helm upgrade --install srenix bionic-ai-solutions/agentic-sre \
+#   helm upgrade --install srenix srenix-ai/agentic-sre \
 #     -f examples/k3s-edge/values.yaml -n srenix --create-namespace
 
 # ── Probe overrides ──────────────────────────────────────────────────
